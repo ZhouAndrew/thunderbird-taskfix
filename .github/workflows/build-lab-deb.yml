@@ -1,0 +1,24 @@
+name: build-lab-deb
+
+on:
+  push:
+    branches: [exp/parallel-taskfix-lab]
+  workflow_dispatch:
+
+jobs:
+  deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run patcher self-test
+        run: |
+          chmod +x selftest.sh
+          ./selftest.sh
+      - name: Build Lab deb
+        run: |
+          chmod +x packaging/build-deb.sh
+          packaging/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thunderbird-taskfix-lab-deb
+          path: dist/*.deb

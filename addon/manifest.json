@@ -1,0 +1,25 @@
+{
+  "manifest_version": 2,
+  "name": "Thunderbird TaskFix Lab",
+  "description": "Recurring-safe multi-select task Status, Progress, Category and completion editing.",
+  "version": "0.1.1",
+  "author": "ZhouAndrew",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net",
+      "strict_min_version": "153.0",
+      "strict_max_version": "153.*"
+    }
+  },
+  "experiment_apis": {
+    "TaskFix": {
+      "schema": "api/TaskFix/schema.json",
+      "parent": {
+        "scopes": ["addon_parent"],
+        "paths": [["TaskFix"]],
+        "script": "api/TaskFix/implementation.js",
+        "events": ["startup"]
+      }
+    }
+  }
+}

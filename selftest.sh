@@ -3,11 +3,12 @@ set -euo pipefail
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/app"
+mkdir -p "$TMP/app/chrome"
 
-python3 - "$TMP/app/omni.ja" <<'PY'
+python3 - "$TMP/app/chrome/calendar.jar" "$TMP/app/chrome/messenger.jar" <<'PY'
 import sys, zipfile
-p=sys.argv[1]
+calendar_jar, messenger_jar = sys.argv[1:3]
+
 utils=r'''function contextChangeTaskProgress(aProgress) {
   if (gTabmail && gTabmail.currentTabInfo.mode.type == "calendarTask") {
     editToDoStatus(aProgress);
@@ -35,6 +36,7 @@ utils=r'''function contextChangeTaskProgress(aProgress) {
   }
 }
 '''
+
 view=r'''var taskDetailsView = {
   loadCategories() {
     const categoryPopup = document.getElementById("task-actions-category-popup");
@@ -78,30 +80,39 @@ view=r'''var taskDetailsView = {
   },
 };
 '''
-panels=r'''<hbox id="task-actions-toolbar" class="themeable-brighttext" role="toolbar">
-  <toolbarbutton id="task-actions-category" type="menu">
-    <menupopup id="task-actions-category-popup"/>
-  </toolbarbutton>
+
+messenger=r'''<window>
+  <hbox id="task-actions-toolbar" class="themeable-brighttext" role="toolbar">
+    <toolbarbutton id="task-actions-category" type="menu">
+      <menupopup id="task-actions-category-popup"/>
+    </toolbarbutton>
                     <toolbarbutton is="toolbarbutton-menu-button" id="task-actions-markcompleted"
                                    type="menu"/>
-</hbox>
+  </hbox>
+</window>
 '''
-with zipfile.ZipFile(p,'w',compression=zipfile.ZIP_DEFLATED) as z:
-    z.writestr('chrome/calendar/content/calendar/calendar-task-tree-utils.js',utils)
-    z.writestr('chrome/calendar/content/calendar/calendar-task-view.js',view)
-    z.writestr('chrome/calendar/content/calendar/calendar-tab-panels.inc.xhtml',panels)
-    z.writestr('keep.txt',b'unchanged')
+
+with zipfile.ZipFile(calendar_jar,'w',compression=zipfile.ZIP_DEFLATED) as z:
+    z.writestr('content/calendar-task-tree-utils.js',utils)
+    z.writestr('content/calendar-task-view.js',view)
+    z.writestr('keep-calendar.txt',b'unchanged-calendar')
+
+with zipfile.ZipFile(messenger_jar,'w',compression=zipfile.ZIP_DEFLATED) as z:
+    z.writestr('content/messenger/messenger.xhtml',messenger)
+    z.writestr('keep-messenger.txt',b'unchanged-messenger')
 PY
 
 python3 "$HERE/patch_omnijar.py" "$TMP/app"
 python3 "$HERE/patch_omnijar.py" "$TMP/app" >/dev/null
-python3 - "$TMP/app/omni.ja" <<'PY'
+
+python3 - "$TMP/app/chrome/calendar.jar" "$TMP/app/chrome/messenger.jar" <<'PY'
 import sys, zipfile
-with zipfile.ZipFile(sys.argv[1]) as z:
+calendar_jar, messenger_jar = sys.argv[1:3]
+
+with zipfile.ZipFile(calendar_jar) as z:
     assert z.testzip() is None
-    u=z.read('chrome/calendar/content/calendar/calendar-task-tree-utils.js').decode()
-    v=z.read('chrome/calendar/content/calendar/calendar-task-view.js').decode()
-    p=z.read('chrome/calendar/content/calendar/calendar-tab-panels.inc.xhtml').decode()
+    u=z.read('content/calendar-task-tree-utils.js').decode()
+    v=z.read('content/calendar-task-view.js').decode()
     assert 'THUNDERBIRD_TASKFIX_BATCH_EDIT_V2' in u
     assert 'function taskfixModifySelectedTasks' in u
     assert 'function contextChangeTaskStatus' in u
@@ -109,8 +120,14 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     assert 'THUNDERBIRD_TASKFIX_BATCH_EDIT_V2' in v
     assert 'taskfixCategoryCommand(event)' in v
     assert 'taskfixModifySelectedTasks(newItem =>' in v
+    assert z.read('keep-calendar.txt') == b'unchanged-calendar'
+
+with zipfile.ZipFile(messenger_jar) as z:
+    assert z.testzip() is None
+    p=z.read('content/messenger/messenger.xhtml').decode()
     assert 'id="task-actions-status"' in p
     assert "contextChangeTaskStatus('IN-PROCESS')" in p
-    assert z.read('keep.txt') == b'unchanged'
+    assert z.read('keep-messenger.txt') == b'unchanged-messenger'
+
 print('selftest: PASS')
 PY

@@ -1,0 +1,56 @@
+  categoryTextboxKeypress(event) {
+    let category = event.target.value;
+    const categoryPopup = document.getElementById("task-actions-category-popup");
+
+    switch (event.key) {
+      case " ": {
+        const start = event.target.selectionStart;
+        event.target.value =
+          category.substring(0, start) + " " + category.substring(event.target.selectionEnd);
+        event.target.selectionStart = event.target.selectionEnd = start + 1;
+        return;
+      }
+      case "Tab":
+      case "ArrowDown":
+      case "ArrowUp": {
+        event.target.blur();
+        event.preventDefault();
+        const key = event.key == "ArrowUp" ? "ArrowUp" : "ArrowDown";
+        categoryPopup.dispatchEvent(new KeyboardEvent("keydown", { key }));
+        categoryPopup.dispatchEvent(new KeyboardEvent("keyup", { key }));
+        return;
+      }
+      case "Escape":
+        if (category) {
+          event.target.value = "";
+        } else {
+          categoryPopup.hidePopup();
+        }
+        event.preventDefault();
+        return;
+      case "Enter":
+        category = category.trim();
+        if (!category) {
+          return;
+        }
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+
+    // Add a typed category to every selected task without deleting unrelated
+    // categories. Calendars that support only one category are replaced.
+    taskfixModifySelectedTasks(newItem => {
+      const maxCount = newItem.calendar.getProperty("capabilities.categories.maxCount");
+      const categories = newItem.getCategories();
+      if (categories.includes(category)) {
+        return;
+      }
+      newItem.setCategories(maxCount == 1 ? [category] : [...categories, category]);
+    });
+
+    event.target.value = "";
+    this._taskfixCategoryChanges = null;
+  },

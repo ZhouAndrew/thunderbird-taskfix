@@ -1,0 +1,54 @@
+  // THUNDERBIRD_TASKFIX_BATCH_EDIT_V2
+  loadCategories() {
+    const categoryPopup = document.getElementById("task-actions-category-popup");
+    const tasks = getSelectedTasks();
+    const item = tasks[0] ?? document.getElementById("calendar-task-tree").currentTask;
+    if (!item) {
+      return;
+    }
+
+    const selected = tasks.length ? tasks : [item];
+    const categoryList = [
+      ...new Set([
+        ...cal.category.fromPrefs(),
+        ...selected.flatMap(task => task.getCategories()),
+      ]),
+    ].sort(new Intl.Collator().compare);
+
+    // A mixed selection may span calendars with different category limits.
+    // Use checkbox UI globally; per-task limits are honored when applying.
+    while (categoryPopup.childElementCount > 2) {
+      categoryPopup.lastChild.remove();
+    }
+
+    this._taskfixCategoryChanges = new Map();
+
+    for (const cat of categoryList) {
+      const count = selected.filter(task => task.getCategories().includes(cat)).length;
+      const menuitem = document.createXULElement("menuitem");
+      menuitem.setAttribute("class", "calendar-category");
+      menuitem.setAttribute("label", cat);
+      menuitem.setAttribute("value", cat);
+      menuitem.setAttribute("type", "checkbox");
+      menuitem.setAttribute("oncommand", "taskDetailsView.taskfixCategoryCommand(event);");
+      menuitem.dataset.taskfixCategoryState =
+        count == selected.length ? "all" : count == 0 ? "none" : "some";
+      if (count == selected.length) {
+        menuitem.toggleAttribute("checked", true);
+      } else if (count > 0) {
+        menuitem.setAttribute("tooltiptext", "Some selected tasks have this category");
+      }
+      const cssSafeId = cal.view.formatStringForCSSRule(cat);
+      menuitem.style.setProperty("--item-color", `var(--category-${cssSafeId}-color)`);
+      categoryPopup.appendChild(menuitem);
+    }
+  },
+
+  taskfixCategoryCommand(event) {
+    const menuitem = event.target;
+    if (!menuitem?.classList?.contains("calendar-category")) {
+      return;
+    }
+    this._taskfixCategoryChanges ??= new Map();
+    this._taskfixCategoryChanges.set(menuitem.value, menuitem.hasAttribute("checked"));
+  },

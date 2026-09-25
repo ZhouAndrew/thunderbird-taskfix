@@ -2,7 +2,7 @@
 set -euo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-APP_SLUG="thunderbird-taskfix"
+APP_SLUG="thunderbird-taskfix-lab"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -63,7 +63,7 @@ LAUNCHER="$BIN_DIR/$APP_SLUG"
 DESKTOP_DIR="$HOME/.local/share/applications"
 DESKTOP_FILE="$DESKTOP_DIR/${APP_SLUG}.desktop"
 
-say "Thunderbird TaskFix installer"
+say "Thunderbird TaskFix Lab installer"
 say "  Source : $SOURCE_DIR"
 say "  Version: $VERSION"
 say "  Copy   : $TARGET_DIR"
@@ -105,7 +105,7 @@ ICON="$TARGET_DIR/chrome/icons/default/default128.png"
 cat > "$DESKTOP_FILE" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Thunderbird TaskFix $VERSION
+Name=Thunderbird TaskFix Lab $VERSION
 Comment=Experimental Thunderbird task batch Status/Category and recurring VTODO fix
 Exec=$LAUNCHER %u
 Icon=$ICON
@@ -128,15 +128,15 @@ say "Installed successfully."
 say ""
 say "You now have two application copies:"
 say "  1. System Thunderbird: $SOURCE_DIR"
-say "  2. TaskFix Thunderbird: $TARGET_DIR"
+say "  2. TaskFix Lab Thunderbird: $TARGET_DIR"
 say ""
 say "Safe/default launch (separate profile, can run beside the original):"
 say "  $APP_SLUG"
 say ""
-say "A desktop launcher named 'Thunderbird TaskFix $VERSION' was also created."
+say "A desktop launcher named 'Thunderbird TaskFix Lab $VERSION' was also created."
 say "The isolated profile is: $PROFILE_DIR"
 say ""
 say "To use your existing Thunderbird profile instead, CLOSE the original Thunderbird first, then run:"
 say "  $APP_SLUG --system-profile"
 say ""
-say "This installer does not modify /usr/lib, /usr/bin, APT, or your original Thunderbird profile."
+say "This installer does not modify /usr/lib, /usr/bin, APT, the stable TaskFix copy, or your original Thunderbird profile."

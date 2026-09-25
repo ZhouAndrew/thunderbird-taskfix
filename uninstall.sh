@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_SLUG="thunderbird-taskfix"
+APP_SLUG="thunderbird-taskfix-lab"
 BIN="$HOME/.local/bin/$APP_SLUG"
 DESKTOP="$HOME/.local/share/applications/$APP_SLUG.desktop"
 
@@ -14,6 +14,6 @@ if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
 fi
 
-printf '%s\n' "Removed Thunderbird TaskFix application/launcher."
+printf '%s\n' "Removed Thunderbird TaskFix Lab application/launcher."
 printf '%s\n' "Kept profile data at: $HOME/.local/share/$APP_SLUG/profile"
 printf '%s\n' "Delete that directory manually only if you no longer need its data."

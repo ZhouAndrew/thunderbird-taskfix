@@ -1,0 +1,6 @@
+[
+  {
+    "namespace": "TaskFix",
+    "description": "Internal startup hook for Thunderbird TaskFix Lab."
+  }
+]

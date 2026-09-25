@@ -1,0 +1,26 @@
+  saveCategories() {
+    const changes = this._taskfixCategoryChanges;
+    this._taskfixCategoryChanges = null;
+    if (!changes?.size) {
+      return true;
+    }
+
+    taskfixModifySelectedTasks(newItem => {
+      let categories = [...newItem.getCategories()];
+      for (const [category, shouldHave] of changes) {
+        const hasCategory = categories.includes(category);
+        if (shouldHave && !hasCategory) {
+          const maxCount = newItem.calendar.getProperty("capabilities.categories.maxCount");
+          if (maxCount == 1) {
+            categories = [category];
+          } else {
+            categories.push(category);
+          }
+        } else if (!shouldHave && hasCategory) {
+          categories = categories.filter(cat => cat != category);
+        }
+      }
+      newItem.setCategories(categories);
+    });
+    return false;
+  },

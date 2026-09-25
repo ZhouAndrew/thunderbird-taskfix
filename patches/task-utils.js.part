@@ -1,0 +1,109 @@
+// THUNDERBIRD_TASKFIX_BATCH_EDIT_V2
+// Apply one logical batch edit per recurring parent. Multiple selected
+// occurrences of one recurring CalDAV VTODO share one remote resource, so
+// writing each proxy independently can race the ETag produced by the prior PUT.
+function taskfixModifySelectedTasks(aMutator) {
+  startBatchTransaction();
+  try {
+    const tasks = getSelectedTasks();
+    const recurringGroups = new Map();
+    const standaloneTasks = [];
+
+    for (const task of tasks) {
+      const parent = task.parentItem;
+      if (task.recurrenceId && parent?.recurrenceInfo) {
+        const key = `${task.calendar?.id ?? ""}\u0000${parent.id}`;
+        let group = recurringGroups.get(key);
+        if (!group) {
+          group = { parent, tasks: [] };
+          recurringGroups.set(key, group);
+        }
+        group.tasks.push(task);
+      } else {
+        standaloneTasks.push(task);
+      }
+    }
+
+    for (const task of standaloneTasks) {
+      const newTask = task.clone().QueryInterface(Ci.calITodo);
+      aMutator(newTask, task);
+      doTransaction("modify", newTask, newTask.calendar, task, null);
+    }
+
+    for (const { parent: oldParent, tasks: occurrences } of recurringGroups.values()) {
+      const newParent = oldParent.clone().QueryInterface(Ci.calITodo);
+      const recurrenceInfo = newParent.recurrenceInfo;
+
+      for (const task of occurrences) {
+        const newOccurrence = recurrenceInfo
+          .getOccurrenceFor(task.recurrenceId)
+          .QueryInterface(Ci.calITodo);
+        aMutator(newOccurrence, task);
+        recurrenceInfo.modifyException(newOccurrence, true);
+      }
+
+      doTransaction("modify", newParent, newParent.calendar, oldParent, null);
+    }
+  } finally {
+    endBatchTransaction();
+  }
+}
+
+function contextChangeTaskProgress(aProgress) {
+  if (gTabmail && gTabmail.currentTabInfo.mode.type == "calendarTask") {
+    editToDoStatus(aProgress);
+    return;
+  }
+
+  taskfixModifySelectedTasks(newTask => {
+    newTask.percentComplete = aProgress;
+    switch (aProgress) {
+      case 0:
+        newTask.isCompleted = false;
+        break;
+      case 100:
+        newTask.isCompleted = true;
+        break;
+      default:
+        newTask.status = "IN-PROCESS";
+        newTask.completedDate = null;
+        break;
+    }
+  });
+}
+
+/**
+ * Set the RFC 5545 VTODO STATUS for all selected tasks.
+ *
+ * @param {string|null} aStatus - NEEDS-ACTION, IN-PROCESS, COMPLETED,
+ *   CANCELLED, or null for no explicit STATUS.
+ */
+function contextChangeTaskStatus(aStatus) {
+  const allowed = new Set([null, "NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED"]);
+  if (!allowed.has(aStatus)) {
+    throw new Error(`Unsupported VTODO status: ${aStatus}`);
+  }
+
+  taskfixModifySelectedTasks(newTask => {
+    const previousPercent = newTask.percentComplete;
+
+    // CalTodo.isCompleted=false clears COMPLETED, STATUS and PERCENT-COMPLETE.
+    // Start from that consistent base for every non-completed state.
+    if (aStatus == "COMPLETED") {
+      newTask.isCompleted = true;
+      return;
+    }
+
+    newTask.isCompleted = false;
+    if (aStatus === null) {
+      return;
+    }
+
+    newTask.status = aStatus;
+    if (aStatus == "NEEDS-ACTION") {
+      newTask.percentComplete = 0;
+    } else if (aStatus == "IN-PROCESS" && previousPercent > 0 && previousPercent < 100) {
+      newTask.percentComplete = previousPercent;
+    }
+  });
+}

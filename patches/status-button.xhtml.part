@@ -1,0 +1,17 @@
+                    <!-- THUNDERBIRD_TASKFIX_BATCH_EDIT_V2 -->
+                    <toolbarbutton id="task-actions-status"
+                                   type="menu"
+                                   wantdropmarker="true"
+                                   tabindex="0"
+                                   label="Status"
+                                   tooltiptext="Set status for all selected tasks"
+                                   class="toolbarbutton-1 message-header-view-button">
+                      <menupopup id="task-actions-status-popup">
+                        <menuitem label="Not specified" oncommand="contextChangeTaskStatus(null);"/>
+                        <menuseparator/>
+                        <menuitem label="Needs Action" oncommand="contextChangeTaskStatus('NEEDS-ACTION');"/>
+                        <menuitem label="In Progress" oncommand="contextChangeTaskStatus('IN-PROCESS');"/>
+                        <menuitem label="Completed" oncommand="contextChangeTaskStatus('COMPLETED');"/>
+                        <menuitem label="Cancelled" oncommand="contextChangeTaskStatus('CANCELLED');"/>
+                      </menupopup>
+                    </toolbarbutton>

@@ -4,8 +4,11 @@ set -euo pipefail
 APP_SLUG="thunderbird-taskfix-clean"
 BIN="$HOME/.local/bin/$APP_SLUG"
 DESKTOP="$HOME/.local/share/applications/$APP_SLUG.desktop"
+USER_DESKTOP="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
+[[ -n "$USER_DESKTOP" && "$USER_DESKTOP" != "$HOME" ]] || USER_DESKTOP="$HOME/Desktop"
+DESKTOP_SHORTCUT="$USER_DESKTOP/Thunderbird TaskFix Clean.desktop"
 
-rm -f "$BIN" "$DESKTOP"
+rm -f "$BIN" "$DESKTOP" "$DESKTOP_SHORTCUT"
 # Remove generated application copies, but intentionally keep the isolated
 # profile because it can contain mail/calendar configuration and user data.
 find "$HOME/.local/opt" -maxdepth 1 -type d -name "${APP_SLUG}-*" -print0 2>/dev/null | xargs -0r rm -rf --

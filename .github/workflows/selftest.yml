@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check shell scripts
+        run: bash -n apply.sh uninstall.sh selftest.sh
       - name: Run TaskFix self-test
         run: |
           chmod +x selftest.sh

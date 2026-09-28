@@ -50,11 +50,12 @@ find_source_dir() {
   return 1
 }
 
-find_default_profile() {
+find_best_profile() {
   python3 - "$HOME/.thunderbird/profiles.ini" <<'PY'
 from __future__ import annotations
 
 import configparser
+import os
 import sys
 from pathlib import Path
 
@@ -66,49 +67,132 @@ cfg = configparser.RawConfigParser()
 cfg.read(ini, encoding="utf-8")
 base = ini.parent
 
-def resolve(path: str, relative: str | None) -> Path:
+def resolve(path: str, relative: str | None = None) -> Path:
     p = Path(path).expanduser()
-    if relative == "1":
+    if relative == "1" or (relative is None and not p.is_absolute()):
         p = base / p
     return p.resolve()
 
-# Thunderbird's [Install*] Default is the strongest signal for the profile
-# currently selected by this installation.
-for section in cfg.sections():
-    if not section.startswith("Install"):
-        continue
-    path = cfg.get(section, "Default", fallback="").strip()
-    if path:
-        p = resolve(path, "1" if not Path(path).is_absolute() else "0")
-        if p.is_dir():
-            print(p)
-            raise SystemExit(0)
+install_defaults: set[Path] = set()
+profile_defaults: set[Path] = set()
+candidates: list[Path] = []
 
-# Fallback to the profile explicitly marked Default=1.
 for section in cfg.sections():
-    if not section.startswith("Profile"):
-        continue
-    if cfg.get(section, "Default", fallback="0").strip() != "1":
-        continue
-    path = cfg.get(section, "Path", fallback="").strip()
-    if path:
-        p = resolve(path, cfg.get(section, "IsRelative", fallback="1").strip())
+    if section.startswith("Install"):
+        raw = cfg.get(section, "Default", fallback="").strip()
+        if raw:
+            p = resolve(raw)
+            if p.is_dir():
+                install_defaults.add(p)
+                candidates.append(p)
+    elif section.startswith("Profile"):
+        raw = cfg.get(section, "Path", fallback="").strip()
+        if not raw:
+            continue
+        p = resolve(raw, cfg.get(section, "IsRelative", fallback="1").strip())
         if p.is_dir():
-            print(p)
-            raise SystemExit(0)
+            candidates.append(p)
+            if cfg.get(section, "Default", fallback="0").strip() == "1":
+                profile_defaults.add(p)
 
-# Last fallback: first existing Profile path.
-for section in cfg.sections():
-    if not section.startswith("Profile"):
-        continue
-    path = cfg.get(section, "Path", fallback="").strip()
-    if path:
-        p = resolve(path, cfg.get(section, "IsRelative", fallback="1").strip())
-        if p.is_dir():
-            print(p)
-            raise SystemExit(0)
+# Include existing profile-looking directories even when profiles.ini contains
+# stale or incomplete install mappings.
+for p in base.iterdir():
+    if p.is_dir() and ("default" in p.name or (p / "prefs.js").is_file()):
+        candidates.append(p.resolve())
 
-raise SystemExit(3)
+seen: set[Path] = set()
+unique: list[Path] = []
+for p in candidates:
+    if p not in seen:
+        seen.add(p)
+        unique.append(p)
+
+def nonempty_dir(path: Path) -> bool:
+    try:
+        return path.is_dir() and any(path.iterdir())
+    except OSError:
+        return False
+
+def size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+def score_profile(p: Path) -> tuple[int, float]:
+    prefs_path = p / "prefs.js"
+    if not prefs_path.is_file():
+        return (-1, 0.0)
+    try:
+        prefs = prefs_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        prefs = ""
+
+    score = 0
+
+    # Real mail/account data. A fresh empty profile normally lacks these.
+    if "mail.accountmanager.accounts" in prefs:
+        score += 7000
+    if "mail.account.account" in prefs:
+        score += 2500
+    if "mail.server.server" in prefs:
+        score += 2500
+    if nonempty_dir(p / "ImapMail"):
+        score += 5000
+    if nonempty_dir(p / "Mail"):
+        score += 1500
+
+    # Real Calendar/CalDAV configuration and cache.
+    if "calendar.registry." in prefs:
+        score += 8000
+    if "calendar.list.sortOrder" in prefs:
+        score += 1500
+    cal_cache = p / "calendar-data" / "cache.sqlite"
+    if size(cal_cache) > 4096:
+        score += 6000
+
+    # Other strong signals that this is an established working profile.
+    if size(p / "global-messages-db.sqlite") > 4096:
+        score += 1500
+    if size(p / "logins.json") > 10 and size(p / "key4.db") > 4096:
+        score += 1200
+    if nonempty_dir(p / "extensions"):
+        score += 500
+
+    # profiles.ini hints are useful, but deliberately weaker than actual data:
+    # old Install defaults can point at a nearly-empty profile.
+    if p in install_defaults:
+        score += 350
+    if p in profile_defaults:
+        score += 300
+
+    # Break ties in favour of the profile used most recently.
+    try:
+        mtime = max(
+            prefs_path.stat().st_mtime,
+            (p / "places.sqlite").stat().st_mtime if (p / "places.sqlite").exists() else 0,
+            cal_cache.stat().st_mtime if cal_cache.exists() else 0,
+        )
+    except OSError:
+        mtime = 0.0
+
+    return (score, mtime)
+
+ranked = sorted(((score_profile(p), p) for p in unique), reverse=True)
+if not ranked or ranked[0][0][0] < 0:
+    raise SystemExit(3)
+
+(best_score, best_mtime), best = ranked[0]
+print(
+    f"TaskFix profile detection: selected {best} "
+    f"(data score={best_score}, modified={best_mtime:.0f})",
+    file=sys.stderr,
+)
+for (score, mtime), p in ranked[:5]:
+    print(f"  candidate score={score:5d}  {p}", file=sys.stderr)
+
+print(best)
 PY
 }
 
@@ -125,7 +209,7 @@ if [[ -n "$SOURCE_PROFILE" ]]; then
   SOURCE_PROFILE="$(readlink -f "$SOURCE_PROFILE")"
   [[ -d "$SOURCE_PROFILE" ]] || die "THUNDERBIRD_PROFILE is not a directory: $SOURCE_PROFILE"
 else
-  SOURCE_PROFILE="$(find_default_profile)" || die "Could not locate the current Thunderbird profile from ~/.thunderbird/profiles.ini"
+  SOURCE_PROFILE="$(find_best_profile)" || die "Could not locate a usable Thunderbird profile from ~/.thunderbird/profiles.ini"
 fi
 
 VERSION="$(awk -F= '$1 == "Version" {print $2; exit}' "$SOURCE_DIR/application.ini" 2>/dev/null || true)"
@@ -138,6 +222,9 @@ BIN_DIR="$HOME/.local/bin"
 LAUNCHER="$BIN_DIR/$APP_SLUG"
 DESKTOP_DIR="$HOME/.local/share/applications"
 DESKTOP_FILE="$DESKTOP_DIR/${APP_SLUG}.desktop"
+USER_DESKTOP="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
+[[ -n "$USER_DESKTOP" && "$USER_DESKTOP" != "$HOME" ]] || USER_DESKTOP="$HOME/Desktop"
+DESKTOP_SHORTCUT="$USER_DESKTOP/Thunderbird TaskFix Clean.desktop"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 say "Thunderbird TaskFix Clean installer"
@@ -149,7 +236,7 @@ say "  Clean data copy    : $PROFILE_DIR"
 say ""
 
 rm -rf "$TARGET_DIR"
-mkdir -p "$(dirname "$TARGET_DIR")" "$PROFILE_ROOT" "$BIN_DIR" "$DESKTOP_DIR"
+mkdir -p "$(dirname "$TARGET_DIR")" "$PROFILE_ROOT" "$BIN_DIR" "$DESKTOP_DIR" "$USER_DESKTOP"
 
 if [[ -d "$PROFILE_DIR" && -n "$(find "$PROFILE_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
   BACKUP_DIR="$PROFILE_ROOT/profile.backup-$STAMP"
@@ -202,6 +289,13 @@ StartupNotify=true
 EOF
 chmod 0644 "$DESKTOP_FILE"
 
+# Dedicated desktop launcher for normal daily use.
+cp -f "$DESKTOP_FILE" "$DESKTOP_SHORTCUT"
+chmod +x "$DESKTOP_SHORTCUT"
+if command -v gio >/dev/null 2>&1; then
+  gio set "$DESKTOP_SHORTCUT" metadata::trusted true >/dev/null 2>&1 || true
+fi
+
 "$TARGET_DIR/thunderbird" --version || die "The copied Thunderbird executable did not start with --version."
 python3 "$HERE/patch_omnijar.py" "$TARGET_DIR" >/dev/null
 
@@ -216,8 +310,10 @@ say "Original Thunderbird app/profile were not modified."
 say ""
 say "Launcher:"
 say "  $LAUNCHER"
-say "Desktop entry:"
+say "Desktop/menu entry:"
 say "  Thunderbird TaskFix Clean $VERSION"
+say "Dedicated desktop launcher:"
+say "  $DESKTOP_SHORTCUT"
 say "Copied profile:"
 say "  $PROFILE_DIR"
 say ""

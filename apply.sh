@@ -2,7 +2,7 @@
 set -euo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-APP_SLUG="thunderbird-taskfix"
+APP_SLUG="thunderbird-taskfix-recurring-safe"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -105,8 +105,8 @@ ICON="$TARGET_DIR/chrome/icons/default/default128.png"
 cat > "$DESKTOP_FILE" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Thunderbird TaskFix $VERSION
-Comment=Experimental Thunderbird task batch Status/Category and recurring VTODO fix
+Name=Thunderbird TaskFix Recurring Safe $VERSION
+Comment=Experimental TaskFix with recurring-parent completion guard
 Exec=$LAUNCHER %u
 Icon=$ICON
 Terminal=false
@@ -133,7 +133,7 @@ say ""
 say "Safe/default launch (separate profile, can run beside the original):"
 say "  $APP_SLUG"
 say ""
-say "A desktop launcher named 'Thunderbird TaskFix $VERSION' was also created."
+say "A desktop launcher named 'Thunderbird TaskFix Recurring Safe $VERSION' was also created."
 say "The isolated profile is: $PROFILE_DIR"
 say ""
 say "To use your existing Thunderbird profile instead, CLOSE the original Thunderbird first, then run:"

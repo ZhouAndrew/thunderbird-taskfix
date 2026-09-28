@@ -2,7 +2,7 @@
 
 This branch installs a **fresh side-by-side copy of the current system Thunderbird**, applies only the TaskFix patch, and then clones the user's current Thunderbird profile into a separate TaskFix profile. The original Thunderbird application and original profile are not modified.
 
-The copied profile includes the user's existing mail/account/calendar/task settings and local profile data. The installer refuses to copy a live Thunderbird profile; close Thunderbird before running it.
+The copied profile includes the user's existing mail/account/calendar/task settings and local profile data. The installer now ranks all known Thunderbird profiles by actual mail/calendar data instead of blindly trusting a stale Install default. The selected source and top candidates are printed during installation. The installer refuses to copy a live Thunderbird profile; close Thunderbird before running it.
 
 ## Install
 
@@ -18,7 +18,7 @@ The launcher is:
 thunderbird-taskfix-clean
 ```
 
-The desktop entry is named **Thunderbird TaskFix Clean <version>**.
+The application-menu entry is named **Thunderbird TaskFix Clean <version>**. The installer also creates a dedicated executable launcher on the user's Desktop named **Thunderbird TaskFix Clean.desktop** and marks it trusted when `gio` is available.
 
 ### What "with data" means
 

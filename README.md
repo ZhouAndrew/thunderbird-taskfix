@@ -1,4 +1,45 @@
-# Thunderbird TaskFix
+# Thunderbird TaskFix Clean — recurring-safe, with copied user data
+
+This branch installs a **fresh side-by-side copy of the current system Thunderbird**, applies only the TaskFix patch, and then clones the user's current Thunderbird profile into a separate TaskFix profile. The original Thunderbird application and original profile are not modified.
+
+The copied profile includes the user's existing mail/account/calendar/task settings and local profile data. The installer refuses to copy a live Thunderbird profile; close Thunderbird before running it.
+
+## Install
+
+```bash
+chmod +x apply.sh selftest.sh uninstall.sh
+./selftest.sh
+./apply.sh
+```
+
+The launcher is:
+
+```text
+thunderbird-taskfix-clean
+```
+
+The desktop entry is named **Thunderbird TaskFix Clean <version>**.
+
+### What "with data" means
+
+On first install (and on an explicit reinstall), the installer resolves the current default profile from `~/.thunderbird/profiles.ini`, makes a full copied snapshot under:
+
+```text
+~/.local/share/thunderbird-taskfix-clean/profile
+```
+
+If a previous TaskFix Clean copied profile already exists, it is moved to a timestamped backup before a new snapshot is created.
+
+This is intentionally different from the old experimental installer, which created an empty isolated profile.
+
+### Current data-recovery step for the recurring-parent incident
+
+If a repeating parent row in **All** currently shows `Completed` even though the series should continue, use the copied-data TaskFix Clean instance and change that parent once to **Status → Needs Action**. Sync, then verify the expected occurrence appears in **Today**.
+
+After recovery, this branch prevents **Mark Completed** / **Status → Completed** from completing an unexpanded recurring parent in **All**. Concrete occurrences in **Today** / **Next Seven Days** can still be completed normally.
+
+---
+
 
 TaskFix is a user-local patch package for Thunderbird Tasks. It creates a **second copy of the installed Thunderbird** under `~/.local/opt`, leaving the Linux Mint / APT Thunderbird untouched.
 

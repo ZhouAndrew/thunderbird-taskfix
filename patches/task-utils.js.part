@@ -1,13 +1,38 @@
 // THUNDERBIRD_TASKFIX_BATCH_EDIT_V2
+// THUNDERBIRD_TASKFIX_RECURRING_PARENT_GUARD_V1
 // Apply one logical batch edit per recurring parent. Multiple selected
 // occurrences of one recurring CalDAV VTODO share one remote resource, so
 // writing each proxy independently can race the ETag produced by the prior PUT.
-function taskfixModifySelectedTasks(aMutator) {
+//
+// Important: an unbounded "All" task view returns a recurring *parent* instead
+// of an occurrence. Completing that parent completes the whole series and can
+// make future occurrences disappear from Today. Completion commands therefore
+// refuse to mutate an unexpanded recurring parent; use Today/Next Seven Days to
+// complete a concrete occurrence. Non-completion edits may still target the
+// parent intentionally (for example Needs Action can repair a series that was
+// accidentally completed).
+function taskfixWarnRecurringParentCompletion(aCount) {
+  if (!aCount) {
+    return;
+  }
+
+  const noun = aCount == 1 ? "task" : "tasks";
+  window.alert(
+    `TaskFix did not mark ${aCount} repeating-series ${noun} Completed.\n\n` +
+      "In All, a repeating row represents the whole series. " +
+      "Use Today or Next Seven Days to complete a concrete occurrence."
+  );
+}
+
+function taskfixModifySelectedTasks(aMutator, aOptions = {}) {
+  const protectRecurringParents = Boolean(aOptions.protectRecurringParents);
+
   startBatchTransaction();
   try {
     const tasks = getSelectedTasks();
     const recurringGroups = new Map();
     const standaloneTasks = [];
+    const blockedRecurringParents = [];
 
     for (const task of tasks) {
       const parent = task.parentItem;
@@ -19,6 +44,11 @@ function taskfixModifySelectedTasks(aMutator) {
           recurringGroups.set(key, group);
         }
         group.tasks.push(task);
+      } else if (protectRecurringParents && task.recurrenceInfo) {
+        // In the unbounded All view Thunderbird returns the recurring parent
+        // itself. Never set that parent Completed as a side effect of a normal
+        // "mark completed" action: doing so hides all future occurrences.
+        blockedRecurringParents.push(task);
       } else {
         standaloneTasks.push(task);
       }
@@ -44,6 +74,8 @@ function taskfixModifySelectedTasks(aMutator) {
 
       doTransaction("modify", newParent, newParent.calendar, oldParent, null);
     }
+
+    return blockedRecurringParents.length;
   } finally {
     endBatchTransaction();
   }
@@ -55,21 +87,26 @@ function contextChangeTaskProgress(aProgress) {
     return;
   }
 
-  taskfixModifySelectedTasks(newTask => {
-    newTask.percentComplete = aProgress;
-    switch (aProgress) {
-      case 0:
-        newTask.isCompleted = false;
-        break;
-      case 100:
-        newTask.isCompleted = true;
-        break;
-      default:
-        newTask.status = "IN-PROCESS";
-        newTask.completedDate = null;
-        break;
-    }
-  });
+  const blocked = taskfixModifySelectedTasks(
+    newTask => {
+      newTask.percentComplete = aProgress;
+      switch (aProgress) {
+        case 0:
+          newTask.isCompleted = false;
+          break;
+        case 100:
+          newTask.isCompleted = true;
+          break;
+        default:
+          newTask.status = "IN-PROCESS";
+          newTask.completedDate = null;
+          break;
+      }
+    },
+    { protectRecurringParents: aProgress == 100 }
+  );
+
+  taskfixWarnRecurringParentCompletion(blocked);
 }
 
 /**
@@ -84,26 +121,31 @@ function contextChangeTaskStatus(aStatus) {
     throw new Error(`Unsupported VTODO status: ${aStatus}`);
   }
 
-  taskfixModifySelectedTasks(newTask => {
-    const previousPercent = newTask.percentComplete;
+  const blocked = taskfixModifySelectedTasks(
+    newTask => {
+      const previousPercent = newTask.percentComplete;
 
-    // CalTodo.isCompleted=false clears COMPLETED, STATUS and PERCENT-COMPLETE.
-    // Start from that consistent base for every non-completed state.
-    if (aStatus == "COMPLETED") {
-      newTask.isCompleted = true;
-      return;
-    }
+      // CalTodo.isCompleted=false clears COMPLETED, STATUS and PERCENT-COMPLETE.
+      // Start from that consistent base for every non-completed state.
+      if (aStatus == "COMPLETED") {
+        newTask.isCompleted = true;
+        return;
+      }
 
-    newTask.isCompleted = false;
-    if (aStatus === null) {
-      return;
-    }
+      newTask.isCompleted = false;
+      if (aStatus === null) {
+        return;
+      }
 
-    newTask.status = aStatus;
-    if (aStatus == "NEEDS-ACTION") {
-      newTask.percentComplete = 0;
-    } else if (aStatus == "IN-PROCESS" && previousPercent > 0 && previousPercent < 100) {
-      newTask.percentComplete = previousPercent;
-    }
-  });
+      newTask.status = aStatus;
+      if (aStatus == "NEEDS-ACTION") {
+        newTask.percentComplete = 0;
+      } else if (aStatus == "IN-PROCESS" && previousPercent > 0 && previousPercent < 100) {
+        newTask.percentComplete = previousPercent;
+      }
+    },
+    { protectRecurringParents: aStatus == "COMPLETED" }
+  );
+
+  taskfixWarnRecurringParentCompletion(blocked);
 }

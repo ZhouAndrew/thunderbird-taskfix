@@ -13,6 +13,7 @@ from typing import Callable, NoReturn
 HERE = Path(__file__).resolve().parent
 PATCH_DIR = HERE / "patches"
 MARKER = "THUNDERBIRD_TASKFIX_BATCH_EDIT_V2"
+UTILS_GUARD_MARKER = "THUNDERBIRD_TASKFIX_RECURRING_PARENT_GUARD_V1"
 
 TASK_UTILS = "calendar-task-tree-utils.js"
 TASK_VIEW = "calendar-task-view.js"
@@ -105,8 +106,23 @@ def replace_object_method(text: str, signature: str, replacement: str, required:
 
 
 def patch_task_utils(text: str) -> str:
-    if MARKER in text and "function contextChangeTaskStatus" in text:
+    if (
+        MARKER in text
+        and UTILS_GUARD_MARKER in text
+        and "function contextChangeTaskStatus" in text
+    ):
         return text
+
+    # Upgrade an earlier TaskFix V2 utility patch in place. This matters if a
+    # generated TaskFix copy is used as THUNDERBIRD_DIR for a refresh.
+    if MARKER in text and "function contextChangeTaskStatus" in text:
+        start = text.find("// " + MARKER)
+        status_start = text.find("function contextChangeTaskStatus", start)
+        if start < 0 or status_start < 0:
+            fail("Could not locate the previous TaskFix utility block")
+        _, end = find_braced_block(text, status_start)
+        return text[:start] + load_patch("task-utils.js.part").rstrip() + text[end:]
+
     return replace_function(
         text,
         "function contextChangeTaskProgress(aProgress) {",
@@ -259,8 +275,12 @@ def verify_rebuilt_archive(check: zipfile.ZipFile, entries: dict[str, str]) -> N
 
     if TASK_UTILS in entries:
         text = check.read(entries[TASK_UTILS]).decode("utf-8")
-        if MARKER not in text or "function contextChangeTaskStatus" not in text:
-            fail("Task utility patch marker/status function missing after archive rebuild")
+        if (
+            MARKER not in text
+            or UTILS_GUARD_MARKER not in text
+            or "function contextChangeTaskStatus" not in text
+        ):
+            fail("Task utility patch markers/status function missing after archive rebuild")
 
     if TASK_VIEW in entries:
         text = check.read(entries[TASK_VIEW]).decode("utf-8")

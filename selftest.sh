@@ -114,9 +114,13 @@ with zipfile.ZipFile(calendar_jar) as z:
     u=z.read('content/calendar-task-tree-utils.js').decode()
     v=z.read('content/calendar-task-view.js').decode()
     assert 'THUNDERBIRD_TASKFIX_BATCH_EDIT_V2' in u
+    assert 'THUNDERBIRD_TASKFIX_RECURRING_PARENT_GUARD_V1' in u
     assert 'function taskfixModifySelectedTasks' in u
     assert 'function contextChangeTaskStatus' in u
     assert 'recurringGroups' in u
+    assert 'protectRecurringParents' in u
+    assert 'blockedRecurringParents' in u
+    assert 'taskfixWarnRecurringParentCompletion' in u
     assert 'THUNDERBIRD_TASKFIX_BATCH_EDIT_V2' in v
     assert 'taskfixCategoryCommand(event)' in v
     assert 'taskfixModifySelectedTasks(newItem =>' in v

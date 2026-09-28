@@ -16,6 +16,7 @@ This branch extends the original Mozilla Bug 1872561 workaround into a small bat
 - **Batch Category**: the existing Category menu applies changes to every selected task instead of only `currentTask`.
 - **VTODO consistency**: Completed uses Thunderbird's `isCompleted` logic so `STATUS:COMPLETED`, `PERCENT-COMPLETE:100`, and `COMPLETED` stay consistent. Returning to a non-completed state clears stale completion metadata first.
 - **Recurring-task safety**: Category and Status use the same one-parent-per-recurring-VTODO batching as Mark Completed.
+- **Recurring-parent completion guard**: Thunderbird's unbounded **All** view returns the recurring parent itself. TaskFix now refuses `Completed`/`Mark Completed` on that parent so one click cannot complete the whole series and hide future occurrences. Use **Today** or **Next Seven Days** to complete a concrete occurrence. `Needs Action` remains allowed on the parent so an accidentally completed series can be repaired.
 
 ## Install / refresh
 
@@ -35,13 +36,13 @@ The installer creates:
 Safe/default launch:
 
 ```bash
-thunderbird-taskfix
+thunderbird-taskfix-recurring-safe
 ```
 
 To use your normal Thunderbird profile, first close the normal Thunderbird completely, then run:
 
 ```bash
-thunderbird-taskfix --system-profile
+thunderbird-taskfix-recurring-safe --system-profile
 ```
 
 Do not run two Thunderbird processes against the same profile at the same time.
@@ -63,10 +64,11 @@ A green `selftest.sh` is **not** enough to call a release verified. On the real 
 1. Ctrl/Shift-select several ordinary tasks; set **Status → In Progress**; every selected task changes.
 2. Restart Thunderbird TaskFix; the Status values persist after CalDAV sync.
 3. Select several tasks; use **Category** to add and remove a category; every selected task changes while unrelated categories are preserved.
-4. Select 3–5 occurrences of one recurring CalDAV VTODO; choose **Mark Completed**; all selected occurrences complete with no `Item changed on server` error.
-5. Repeat the recurring-occurrence test with **Status** and **Category**.
-6. Unselected occurrences remain unchanged.
-7. Refresh/sync, restart TaskFix, then open the normal Thunderbird (not simultaneously on the same profile) and confirm Radicale shows the same data.
+4. In **Today** or **Next Seven Days**, select 3–5 concrete occurrences of one recurring CalDAV VTODO; choose **Mark Completed**; all selected occurrences complete with no `Item changed on server` error.
+5. In **All**, select a `(Repeating)` parent row and choose **Mark Completed** or **Status → Completed**; TaskFix must refuse the operation and the series must remain available on future dates.
+6. Repeat the recurring-occurrence test with **Status** and **Category**.
+7. Unselected occurrences remain unchanged.
+8. Refresh/sync, restart TaskFix, then open the normal Thunderbird (not simultaneously on the same profile) and confirm Radicale shows the same data.
 
 Until that passes, treat this branch as a **release candidate**, not a verified final release.
 
@@ -84,3 +86,8 @@ The generated TaskFix application and launcher are removed. The isolated profile
 - Does not edit `/usr/bin`, `/usr/lib`, APT, or the distro Thunderbird in place.
 - Keeps the isolated profile outside the generated application copy.
 - Re-running `apply.sh` refreshes only the generated application copy.
+
+
+## Emergency repair for an already completed recurring parent
+
+If an `All` row shows `(Repeating)` and `Status = Completed`, select that parent and choose **Status → Needs Action** once. Then sync and switch to **Today**. This clears the accidental parent-level completion; the new guard prevents a later **Completed** action in **All** from repeating the damage.

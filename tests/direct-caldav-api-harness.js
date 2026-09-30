@@ -142,8 +142,8 @@ class Calendar {
   }
   async addItem(item) {
     this.calls.add++;
+    assert(Boolean(item.id), "Thunderbird provider requires an item UID before addItem");
     const stored = item.clone();
-    stored.id ||= "uid-" + (++uidCounter);
     stored.calendar = this;
     stored.parentItem = stored;
     this.items.set(stored.id, stored);
@@ -186,6 +186,7 @@ const cal = {
   },
   createTodo() { return new Item("task"); },
   createEvent() { return new Item("event"); },
+  getUUID() { return "uid-" + (++uidCounter); },
   createDateTime(value) { return new DateTime(value); },
   dtz: {
     defaultTimezone: {tzid: "Asia/Shanghai"},

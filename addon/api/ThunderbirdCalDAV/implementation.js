@@ -110,10 +110,25 @@ function categoriesOf(item) {
 
 function dateView(value) {
   if (!value) return null;
+
+  // Thunderbird providers may normalize server values to UTC. The workspace
+  // edits HTML datetime-local values, so expose the wall-clock value in
+  // Thunderbird's configured default timezone rather than treating UTC clock
+  // fields as local time.
+  let displayValue = value;
+  if (!value.isDate && typeof value.getInTimezone === "function") {
+    try {
+      displayValue = value.getInTimezone(cal.dtz.defaultTimezone);
+    } catch (error) {
+      console.warn("[ThunderbirdCalDAV] timezone conversion failed", error);
+    }
+  }
+
   return {
-    icalString: String(value.icalString || ""),
-    isDate: Boolean(value.isDate),
-    timezone: String(value.timezone?.tzid || ""),
+    icalString: String(displayValue.icalString || ""),
+    sourceIcalString: String(value.icalString || ""),
+    isDate: Boolean(displayValue.isDate),
+    timezone: String(displayValue.timezone?.tzid || ""),
   };
 }
 

@@ -31,6 +31,7 @@
             title: task.title,
             beforeStatus: task.status || "",
             beforePaused: Boolean(task.paused),
+            beforePercentComplete: Number(task.percentComplete || 0),
           }
         : null,
       steps: [],
@@ -69,6 +70,14 @@
     );
   }
 
+  function taskSnapshot(task) {
+    return {
+      status: task.status || null,
+      paused: Boolean(task.paused),
+      percentComplete: Number(task.percentComplete || 0),
+    };
+  }
+
   async function readBackTask(task, receipt, expected = {}) {
     const stored = await browser.ThunderbirdCalDAV.getTask(task.calendarId, task.id);
     for (const [key, value] of Object.entries(expected)) {
@@ -98,6 +107,34 @@
     return readBackTask(task, receipt, expected);
   }
 
+  async function restoreTask(task, snapshot, receipt) {
+    try {
+      await browser.ThunderbirdCalDAV.updateTask(task.calendarId, task.id, snapshot);
+      const stored = await browser.ThunderbirdCalDAV.getTask(task.calendarId, task.id);
+      const expectedStatus = snapshot.status || "";
+      if (
+        stored.status !== expectedStatus ||
+        Boolean(stored.paused) !== Boolean(snapshot.paused) ||
+        Number(stored.percentComplete || 0) !== Number(snapshot.percentComplete || 0)
+      ) {
+        throw new Error("Task rollback read-back mismatch.");
+      }
+      step(receipt, "Rollback", "restore task state", true, {
+        uid: task.id,
+        status: stored.status,
+        paused: Boolean(stored.paused),
+        percentComplete: stored.percentComplete,
+      });
+      return true;
+    } catch (error) {
+      step(receipt, "Rollback", "restore task state", false, {
+        uid: task.id,
+        message: errorText(error),
+      });
+      return false;
+    }
+  }
+
   async function createWorkEvent(task, workCalendarId, startedAt, receipt) {
     if (!workCalendarId) {
       throw new Error("No writable Work calendar is configured.");
@@ -118,7 +155,9 @@
       calendarId: created.calendarId,
       calendar: created.calendarName,
       start: created.start?.icalString || null,
+      end: created.end?.icalString || null,
       taskUid: created.taskUid,
+      workSession: created.workSession,
     });
 
     const stored = await browser.ThunderbirdCalDAV.getEvent(
@@ -126,15 +165,20 @@
       created.id
     );
     if (stored.taskUid !== task.id || !stored.workSession) {
-      throw new Error("Work VEVENT read-back did not preserve the task relation.");
+      throw new Error(
+        `Work VEVENT read-back lost relation: taskUid=${stored.taskUid || "(empty)"}, workSession=${String(stored.workSession)}`
+      );
     }
     if (stored.end) {
-      throw new Error("A new Work VEVENT must remain open until Pause/Complete/Cancel.");
+      throw new Error(
+        `A new Work VEVENT must remain open; read-back DTEND=${stored.end?.icalString || "present"}`
+      );
     }
     step(receipt, "Work Session", "read-back VEVENT", true, {
       uid: stored.id,
       open: !stored.end,
       taskUid: stored.taskUid,
+      workSession: stored.workSession,
     });
     return stored;
   }
@@ -163,16 +207,66 @@
   }
 
   async function reopenWorkEvent(workEvent, receipt) {
-    if (!workEvent?.id || !workEvent?.calendarId) return;
-    await browser.ThunderbirdCalDAV.updateEvent(workEvent.calendarId, workEvent.id, {
-      end: null,
-    });
-    const stored = await browser.ThunderbirdCalDAV.getEvent(
-      workEvent.calendarId,
-      workEvent.id
-    );
-    if (stored.end) throw new Error("Rollback failed to reopen Work VEVENT.");
-    step(receipt, "Rollback", "reopen VEVENT", true, {uid: stored.id});
+    if (!workEvent?.id || !workEvent?.calendarId) return true;
+    try {
+      await browser.ThunderbirdCalDAV.updateEvent(workEvent.calendarId, workEvent.id, {
+        end: null,
+      });
+      const stored = await browser.ThunderbirdCalDAV.getEvent(
+        workEvent.calendarId,
+        workEvent.id
+      );
+      if (stored.end) throw new Error("Rollback read-back still contains DTEND.");
+      step(receipt, "Rollback", "reopen VEVENT", true, {uid: stored.id});
+      return true;
+    } catch (error) {
+      step(receipt, "Rollback", "reopen VEVENT", false, {
+        uid: workEvent.id,
+        message: errorText(error),
+      });
+      return false;
+    }
+  }
+
+  async function deleteWorkEvent(workEvent, receipt) {
+    if (!workEvent?.id || !workEvent?.calendarId) return true;
+    try {
+      await browser.ThunderbirdCalDAV.deleteEvent(workEvent.calendarId, workEvent.id);
+      let absent = false;
+      try {
+        await browser.ThunderbirdCalDAV.getEvent(workEvent.calendarId, workEvent.id);
+      } catch (_error) {
+        absent = true;
+      }
+      if (!absent) throw new Error("Deleted Work VEVENT is still readable.");
+      step(receipt, "Rollback", "delete created VEVENT", true, {
+        uid: workEvent.id,
+      });
+      return true;
+    } catch (error) {
+      step(receipt, "Rollback", "delete created VEVENT", false, {
+        uid: workEvent.id,
+        message: errorText(error),
+      });
+      return false;
+    }
+  }
+
+  async function restoreRuntime(runtime, receipt) {
+    try {
+      await AssistantStorage.setRuntime(runtime);
+      step(receipt, "Rollback", "restore runtime state", true, {
+        state: runtime.state,
+        taskUid: runtime.currentTask?.id || null,
+        workEventUid: runtime.currentWorkEvent?.id || null,
+      });
+      return true;
+    } catch (error) {
+      step(receipt, "Rollback", "restore runtime state", false, {
+        message: errorText(error),
+      });
+      return false;
+    }
   }
 
   async function finalizeReceipt(receipt) {
@@ -215,8 +309,11 @@
       if (runtime.state !== "idle" && runtime.currentTask) {
         throw new Error("Another task is already active.");
       }
-      const before = {status: task.status || "", paused: Boolean(task.paused)};
+
+      const beforeTask = taskSnapshot(task);
       let taskWritten = false;
+      let workEvent = null;
+
       try {
         await updateAndVerifyTask(
           task,
@@ -226,13 +323,7 @@
         );
         taskWritten = true;
 
-        const startedAt = toLocalInput();
-        const workEvent = await createWorkEvent(
-          task,
-          workCalendarId,
-          startedAt,
-          receipt
-        );
+        workEvent = await createWorkEvent(task, workCalendarId, toLocalInput(), receipt);
 
         await AssistantStorage.setRuntime({
           state: "working",
@@ -254,19 +345,9 @@
           workEventUid: workEvent.id,
         });
       } catch (error) {
-        if (taskWritten) {
-          try {
-            await browser.ThunderbirdCalDAV.updateTask(task.calendarId, task.id, {
-              status: before.status || null,
-              paused: before.paused,
-            });
-            step(receipt, "Rollback", "restore task state", true, before);
-          } catch (rollbackError) {
-            step(receipt, "Rollback", "restore task state", false, {
-              message: errorText(rollbackError),
-            });
-          }
-        }
+        if (workEvent) await deleteWorkEvent(workEvent, receipt);
+        if (taskWritten) await restoreTask(task, beforeTask, receipt);
+        await restoreRuntime(runtime, receipt);
         throw error;
       }
     });
@@ -279,17 +360,22 @@
       if (runtime.state !== "working" || !sameTask(runtime, task)) {
         throw new Error("The selected task is not the currently working task.");
       }
-      const endedAt = toLocalInput();
-      let closed = false;
+
+      const beforeTask = taskSnapshot(task);
+      let eventClosed = false;
+      let taskWritten = false;
+
       try {
-        await closeWorkEvent(runtime.currentWorkEvent, endedAt, receipt);
-        closed = true;
+        await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
+        eventClosed = true;
+
         await updateAndVerifyTask(
           task,
           {status: "IN-PROCESS", paused: true},
           {status: "IN-PROCESS", paused: true},
           receipt
         );
+        taskWritten = true;
 
         const elapsed = runtime.segmentStartedAtMs
           ? Math.max(0, Date.now() - runtime.segmentStartedAtMs)
@@ -305,15 +391,9 @@
           accumulatedMs: Number(runtime.accumulatedMs || 0) + elapsed,
         });
       } catch (error) {
-        if (closed) {
-          try {
-            await reopenWorkEvent(runtime.currentWorkEvent, receipt);
-          } catch (rollbackError) {
-            step(receipt, "Rollback", "reopen VEVENT", false, {
-              message: errorText(rollbackError),
-            });
-          }
-        }
+        if (taskWritten) await restoreTask(task, beforeTask, receipt);
+        if (eventClosed) await reopenWorkEvent(runtime.currentWorkEvent, receipt);
+        await restoreRuntime(runtime, receipt);
         throw error;
       }
     });
@@ -326,7 +406,11 @@
       if (runtime.state !== "paused" || !sameTask(runtime, task)) {
         throw new Error("The selected task is not paused.");
       }
+
+      const beforeTask = taskSnapshot(task);
       let taskWritten = false;
+      let workEvent = null;
+
       try {
         await updateAndVerifyTask(
           task,
@@ -336,12 +420,8 @@
         );
         taskWritten = true;
 
-        const workEvent = await createWorkEvent(
-          task,
-          workCalendarId,
-          toLocalInput(),
-          receipt
-        );
+        workEvent = await createWorkEvent(task, workCalendarId, toLocalInput(), receipt);
+
         await AssistantStorage.setRuntime({
           ...runtime,
           state: "working",
@@ -355,19 +435,9 @@
           workEventUid: workEvent.id,
         });
       } catch (error) {
-        if (taskWritten) {
-          try {
-            await browser.ThunderbirdCalDAV.updateTask(task.calendarId, task.id, {
-              status: "IN-PROCESS",
-              paused: true,
-            });
-            step(receipt, "Rollback", "restore paused task state", true, {});
-          } catch (rollbackError) {
-            step(receipt, "Rollback", "restore paused task state", false, {
-              message: errorText(rollbackError),
-            });
-          }
-        }
+        if (workEvent) await deleteWorkEvent(workEvent, receipt);
+        if (taskWritten) await restoreTask(task, beforeTask, receipt);
+        await restoreRuntime(runtime, receipt);
         throw error;
       }
     });
@@ -382,27 +452,36 @@
       if (!sameTask(runtime, task) || !["working", "paused"].includes(runtime.state)) {
         throw new Error("The selected task is not the current task.");
       }
-      if (runtime.state === "working" && runtime.currentWorkEvent) {
-        await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
+
+      const beforeTask = taskSnapshot(task);
+      let eventClosed = false;
+      let taskWritten = false;
+
+      try {
+        if (runtime.state === "working" && runtime.currentWorkEvent) {
+          await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
+          eventClosed = true;
+        }
+
+        const changes =
+          status === "COMPLETED"
+            ? {status: "COMPLETED", paused: false, percentComplete: 100}
+            : {status: "CANCELLED", paused: false};
+
+        await updateAndVerifyTask(task, changes, {status, paused: false}, receipt);
+        taskWritten = true;
+
+        await AssistantStorage.clearRuntime();
+        step(receipt, "Runtime", "clear current task", true, {state: "idle"});
+        step(receipt, "WordPress", "not invoked", true, {
+          note: "Workflow completion does not automatically create a WordPress post.",
+        });
+      } catch (error) {
+        if (taskWritten) await restoreTask(task, beforeTask, receipt);
+        if (eventClosed) await reopenWorkEvent(runtime.currentWorkEvent, receipt);
+        await restoreRuntime(runtime, receipt);
+        throw error;
       }
-
-      const changes =
-        status === "COMPLETED"
-          ? {status: "COMPLETED", paused: false, percentComplete: 100}
-          : {status: "CANCELLED", paused: false};
-
-      await updateAndVerifyTask(
-        task,
-        changes,
-        {status, paused: false},
-        receipt
-      );
-
-      await AssistantStorage.clearRuntime();
-      step(receipt, "Runtime", "clear current task", true, {state: "idle"});
-      step(receipt, "WordPress", "not invoked", true, {
-        note: "Workflow completion does not automatically create a WordPress post.",
-      });
     });
   }
 

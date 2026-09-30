@@ -94,6 +94,7 @@ browser.ThunderbirdCalDAV = {
       end: values.end ? {icalString: values.end.replace(/[-:]/g, "")} : null,
       taskUid: values.taskUid || "",
       workSession: Boolean(values.workSession),
+      workOpen: Boolean(values.workOpen),
       status: values.status || "",
     };
     events.set(id, event);
@@ -111,6 +112,7 @@ browser.ThunderbirdCalDAV = {
         ? {icalString: String(changes.end).replace(/[-:]/g, "")}
         : null;
     }
+    if ("workOpen" in changes) event.workOpen = Boolean(changes.workOpen);
     return clone(event);
   },
   async getEvent(calendarId, itemId) {
@@ -149,14 +151,14 @@ async function normalLifecycle() {
   assert(runtime.state === "working", "runtime is not working after start");
   const firstWorkId = runtime.currentWorkEvent?.id;
   assert(firstWorkId && events.has(firstWorkId), "start did not persist Work VEVENT");
-  assert(events.get(firstWorkId).end === null, "start Work VEVENT is not open");
+  assert(events.get(firstWorkId).workOpen === true, "start Work VEVENT is not marked open");
 
   receipt = await AssistantExecutor.pause(clone(task));
   assert(receipt.success, "pause failed");
   assert(task.status === "IN-PROCESS" && task.paused, "pause task state wrong");
   runtime = await AssistantStorage.getRuntime();
   assert(runtime.state === "paused", "runtime is not paused");
-  assert(events.get(firstWorkId).end, "pause did not close first Work VEVENT");
+  assert(events.get(firstWorkId).end && !events.get(firstWorkId).workOpen, "pause did not close first Work VEVENT");
 
   receipt = await AssistantExecutor.resume(clone(task), "work");
   assert(receipt.success, "resume failed");
@@ -166,7 +168,7 @@ async function normalLifecycle() {
   const secondWorkId = runtime.currentWorkEvent?.id;
   assert(secondWorkId && events.has(secondWorkId), "resume did not persist a Work VEVENT");
   assert(secondWorkId !== firstWorkId, "resume reused the first Work VEVENT");
-  assert(events.get(secondWorkId).end === null, "resumed Work VEVENT is not open");
+  assert(events.get(secondWorkId).workOpen === true, "resumed Work VEVENT is not marked open");
 
   receipt = await AssistantExecutor.complete(clone(task));
   assert(receipt.success, "complete failed");
@@ -174,7 +176,7 @@ async function normalLifecycle() {
   assert(task.percentComplete === 100, "complete did not set 100 percent");
   runtime = await AssistantStorage.getRuntime();
   assert(runtime.state === "idle" && !runtime.currentTask, "runtime was not cleared");
-  assert(events.get(secondWorkId).end, "complete did not close second Work VEVENT");
+  assert(events.get(secondWorkId).end && !events.get(secondWorkId).workOpen, "complete did not close second Work VEVENT");
   assert(
     receipt.steps.some(step => step.component === "WordPress" && step.operation === "not invoked"),
     "receipt must explicitly say WordPress was not invoked"
@@ -238,7 +240,7 @@ async function pauseWriteRollback() {
   receipt = await AssistantExecutor.pause(clone(task));
   assert(!receipt.success, "simulated Pause write failure should fail");
   assert(task.status === "IN-PROCESS" && task.paused === false, "failed Pause changed Task state");
-  assert(events.get(workId)?.end === null, "failed Pause did not reopen Work VEVENT");
+  assert(events.get(workId)?.workOpen === true, "failed Pause did not reopen Work VEVENT");
   runtime = await AssistantStorage.getRuntime();
   assert(runtime.state === "working" && runtime.currentWorkEvent?.id === workId, "failed Pause changed runtime");
 }
@@ -272,7 +274,7 @@ async function completeWriteRollback() {
   receipt = await AssistantExecutor.complete(clone(task));
   assert(!receipt.success, "simulated Complete write failure should fail");
   assert(task.status === "IN-PROCESS" && task.percentComplete === 0, "failed Complete changed Task");
-  assert(events.get(workId)?.end === null, "failed Complete did not reopen Work VEVENT");
+  assert(events.get(workId)?.workOpen === true, "failed Complete did not reopen Work VEVENT");
   runtime = await AssistantStorage.getRuntime();
   assert(runtime.state === "working" && runtime.currentWorkEvent?.id === workId, "failed Complete changed runtime");
 }

@@ -10,6 +10,7 @@ on:
       - "packaging/build-xpi.sh"
       - "tests/check-xpi.py"
       - "tests/taskfix-addon-harness.js"
+      - "tests/taskfix-late-panel-harness.js"
       - ".github/workflows/release-taskfix.yml"
   pull_request:
     branches:
@@ -19,6 +20,7 @@ on:
       - "packaging/build-xpi.sh"
       - "tests/check-xpi.py"
       - "tests/taskfix-addon-harness.js"
+      - "tests/taskfix-late-panel-harness.js"
       - ".github/workflows/release-taskfix.yml"
   workflow_dispatch:
 
@@ -37,6 +39,7 @@ jobs:
           node --check addon/api/TaskFix/implementation.js
           node --check addon/background.js
           node tests/taskfix-addon-harness.js
+          node tests/taskfix-late-panel-harness.js
 
       - name: Resolve release identity
         id: release

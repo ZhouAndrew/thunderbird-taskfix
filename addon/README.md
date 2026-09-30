@@ -1,6 +1,6 @@
 # Thunderbird CalDAV Lab
 
-Current build: **0.3.2** for official Thunderbird 153.x.
+Current build: **0.3.3** for official Thunderbird 153.x.
 
 This project is a Thunderbird extension. It is **not** the separate Python/CLI CalDAV Assistant project.
 
@@ -28,6 +28,12 @@ Thunderbird CalDAV Lab XPI
 ```
 
 There is no Native Host, no Python process, no companion daemon, and no second CalDAV client in this add-on.
+
+## 0.3.3 supported-version contract
+
+- Minimum supported Thunderbird version is now **153.0.2**.
+- Real acceptance proved Thunderbird 153.0 has a restart-specific Experiment/Tasks UI injection failure even though first-run CalDAV CRUD succeeds; it is therefore not advertised as supported.
+- CI now exercises 153.0.2esr, the user's 153.1.0esr line, and 153.3.1esr in both UTC and Asia/Shanghai, including a full Thunderbird restart.
 
 ## 0.3.2 hardening
 

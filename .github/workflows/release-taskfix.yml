@@ -11,6 +11,15 @@ on:
       - "tests/check-xpi.py"
       - "tests/taskfix-addon-harness.js"
       - ".github/workflows/release-taskfix.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "addon/**"
+      - "packaging/build-xpi.sh"
+      - "tests/check-xpi.py"
+      - "tests/taskfix-addon-harness.js"
+      - ".github/workflows/release-taskfix.yml"
   workflow_dispatch:
 
 permissions:
@@ -35,16 +44,23 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(python3 -c 'import json; print(json.load(open("addon/manifest.json"))["version"])')"
-          if [[ "$GITHUB_REF_NAME" == "main" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            TAG="v$VERSION-rc.$GITHUB_RUN_NUMBER"
+            PRERELEASE="true"
+            TARGET="${{ github.event.pull_request.head.sha }}"
+          elif [[ "$GITHUB_REF_NAME" == "main" ]]; then
             TAG="v$VERSION"
             PRERELEASE="false"
+            TARGET="$GITHUB_SHA"
           else
             TAG="v$VERSION-rc.$GITHUB_RUN_NUMBER"
             PRERELEASE="true"
+            TARGET="$GITHUB_SHA"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
 
       - name: Build XPI
         run: |
@@ -69,7 +85,7 @@ jobs:
           args=(
             release create "$TAG"
             "dist/thunderbird-taskfix-$VERSION.xpi"
-            --target "$GITHUB_SHA"
+            --target "${{ steps.release.outputs.target }}"
             --title "Thunderbird TaskFix $TAG"
             --generate-notes
           )

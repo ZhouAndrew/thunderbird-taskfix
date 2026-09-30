@@ -405,7 +405,10 @@ async function __runRealAcceptance() {
     item => item.workSession && item.taskUid === "seed-task"
   );
   __acceptanceAssert(workEvents.length >= 2, "Start/Resume did not create separate Work VEVENTs");
-  __acceptanceAssert(workEvents.every(item => item.end), "Completed workflow left an open Work VEVENT");
+  __acceptanceAssert(
+    workEvents.every(item => item.end && !item.workOpen),
+    "Completed workflow left an open Work VEVENT"
+  );
 
   __acceptanceStage = "verify-workflow-audit";
   const auditState = await browser.storage.local.get("caldavAssistant.audit");

@@ -290,7 +290,10 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
           );
 
           stage = "command-undo";
-          // Exercise Thunderbird's real command-controller path too.
+          // Exercise Thunderbird's real command-controller path too. A real
+          // user reaches Edit -> Undo while the task tree has focus.
+          tree.focus();
+          await delay(window, 100);
           window.goDoCommand("cmd_undo");
           await waitFor(
             window,

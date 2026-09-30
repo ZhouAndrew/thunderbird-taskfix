@@ -26,7 +26,7 @@ jobs:
         run: |
           chmod +x packaging/build-xpi.sh
           packaging/build-xpi.sh /tmp/thunderbird-caldav-lab-0.3.1.xpi
-          python3 tests/check-xpi.py /tmp/thunderbird-caldav-lab-0.3.0.xpi
+          python3 tests/check-xpi.py /tmp/thunderbird-caldav-lab-0.3.1.xpi
       - name: Publish tested XPI artifact
         uses: actions/upload-artifact@v4
         with:

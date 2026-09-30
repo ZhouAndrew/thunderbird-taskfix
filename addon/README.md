@@ -27,6 +27,17 @@ This is a standalone Thunderbird enhancement add-on. It does not patch or replac
 - Delete remains Thunderbird's native delete command because Thunderbird already receives the complete selected task list and owns recurrence/deletion confirmation semantics.
 - Disabling or uninstalling this add-on restores the original Thunderbird functions and removes injected menus.
 
+## Release policy
+
+TaskFix does **not** release on a calendar schedule.
+
+A stable GitHub Release is published **once each time a version has passed automated checks and real Thunderbird human-path acceptance and is declared stable**.
+
+- Development and acceptance builds may be published as prereleases / RCs.
+- RCs are not stable releases.
+- Merging an accepted stable version to `main` triggers the stable release workflow.
+- No weekly, biweekly, or monthly release cadence is required.
+
 ## Acceptance checklist
 
 1. Install the XPI into an unmodified official Thunderbird 153.x profile.

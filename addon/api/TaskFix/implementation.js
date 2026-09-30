@@ -23,7 +23,7 @@ this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
       try {
         Services.scriptloader.loadSubScript(scriptURL, window, "UTF-8");
       } catch (error) {
-        console.error("[TaskFix Lab] Failed to inject task window patch", error);
+        console.error("[TaskFix] Failed to inject task window patch", error);
       }
     };
 
@@ -43,13 +43,13 @@ this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
     try {
       ExtensionSupport.unregisterWindowListener(this.extension.id);
     } catch (error) {
-      console.error("[TaskFix Lab] Failed to unregister window listener", error);
+      console.error("[TaskFix] Failed to unregister window listener", error);
     }
     for (const window of Services.wm.getEnumerator(null)) {
       try {
         window.__taskfixAddonCleanup?.();
       } catch (error) {
-        console.error("[TaskFix Lab] Failed to clean up a window", error);
+        console.error("[TaskFix] Failed to clean up a window", error);
       }
     }
     if (!isAppShutdown) {

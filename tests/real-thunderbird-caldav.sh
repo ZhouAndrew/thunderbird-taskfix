@@ -77,6 +77,13 @@ var { cal } = ChromeUtils.importESModule(
   "resource:///modules/calendar/calUtils.sys.mjs"
 );
 
+const loginManager = Cc["@mozilla.org/login-manager;1"].getService(
+  Ci.nsILoginManager
+);
+const ioService = Cc["@mozilla.org/network/io-service;1"].getService(
+  Ci.nsIIOService
+);
+
 const ORIGIN = "http://127.0.0.1:5232";
 const REALM = "acceptance-realm";
 const USERNAME = "acceptance";
@@ -85,7 +92,7 @@ const CALENDAR_ID = "acceptance-calendar";
 const CALENDAR_URL = ORIGIN + "/acceptance/test/";
 
 async function ensureLogin() {
-  const existing = await Services.logins.searchLoginsAsync({
+  const existing = await loginManager.searchLoginsAsync({
     origin: ORIGIN,
     httpRealm: REALM,
   });
@@ -104,7 +111,7 @@ async function ensureLogin() {
     "",
     ""
   );
-  await Services.logins.addLoginAsync(loginInfo);
+  await loginManager.addLoginAsync(loginInfo);
 }
 
 function ensureCalendar() {
@@ -115,7 +122,7 @@ function ensureCalendar() {
 
   calendar = cal.manager.createCalendar(
     "caldav",
-    Services.io.newURI(CALENDAR_URL)
+    ioService.newURI(CALENDAR_URL)
   );
   if (!calendar) {
     throw new Error("Failed to create Thunderbird CalDAV provider");
@@ -135,16 +142,31 @@ this.AcceptanceSetup = class extends ExtensionCommon.ExtensionAPI {
     return {
       AcceptanceSetup: {
         async configure() {
-          await ensureLogin();
-          const calendar = ensureCalendar();
-          if (calendar?.canRefresh) {
-            calendar.refresh();
+          let stage = "login";
+          try {
+            await ensureLogin();
+            stage = "calendar-create";
+            const calendar = ensureCalendar();
+            stage = "calendar-refresh";
+            if (calendar?.canRefresh) {
+              calendar.refresh();
+            }
+            return {
+              ok: true,
+              id: String(calendar?.id || ""),
+              type: String(calendar?.type || ""),
+              name: String(calendar?.name || ""),
+            };
+          } catch (error) {
+            return {
+              ok: false,
+              stage,
+              name: String(error?.name || ""),
+              error: String(error?.message || error),
+              result: String(error?.result || ""),
+              stack: String(error?.stack || ""),
+            };
           }
-          return {
-            id: String(calendar?.id || ""),
-            type: String(calendar?.type || ""),
-            name: String(calendar?.name || ""),
-          };
         },
       },
     };
@@ -188,6 +210,10 @@ async function __waitForAcceptanceCalendar() {
 
 async function __runRealAcceptance() {
   const setup = await browser.AcceptanceSetup.configure();
+  __acceptanceAssert(
+    setup.ok,
+    `Acceptance setup failed at ${setup.stage}: ${setup.error} ${setup.result}`
+  );
   __acceptanceAssert(setup.id === "acceptance-calendar", "Acceptance calendar setup failed");
   __acceptanceAssert(setup.type === "caldav", "Acceptance calendar provider is not CalDAV");
 

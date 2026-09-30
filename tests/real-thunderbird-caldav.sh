@@ -283,7 +283,9 @@ setTimeout(() => {
         kind: "thunderbird-caldav-workspace-acceptance",
         result: {
           ok: false,
-          error: error?.stack || error?.message || String(error),
+          error:
+            (error?.message || String(error)) +
+            (error?.stack ? "\n" + error.stack : ""),
         },
       })
     );

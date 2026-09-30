@@ -1,7 +1,7 @@
-/* Thunderbird TaskFix 0.3.0 — standalone Thunderbird enhancement */
+/* Thunderbird TaskFix 0.3.1 — standalone Thunderbird enhancement */
 (() => {
   const win = globalThis;
-  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V3_0";
+  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V3_1";
   if (win.__taskfixAddonState?.marker === MARKER) return;
 
   try { win.__taskfixAddonCleanup?.(); } catch (e) {
@@ -12,6 +12,7 @@
     marker: MARKER,
     installed: false,
     retryTimer: null,
+    readyObserver: null,
     originals: {},
     contextTree: null,
     contextPopup: null,
@@ -79,7 +80,8 @@
       typeof endBatchTransaction === "function" &&
       typeof doTransaction === "function" &&
       win.taskDetailsView &&
-      document.getElementById("task-actions-toolbar");
+      document.getElementById("task-actions-toolbar") &&
+      document.getElementById("task-actions-markcompleted");
   }
 
   function refreshUndoCommand() {
@@ -449,12 +451,14 @@
     addContextStatusMenu();
 
     state.installed = true;
-    console.info("[TaskFix] 0.3.0 installed");
+    console.info("[TaskFix] 0.3.1 installed");
     return true;
   }
 
   win.__taskfixAddonCleanup = () => {
     if (state.retryTimer !== null) clearInterval(state.retryTimer);
+    state.readyObserver?.disconnect();
+    state.readyObserver = null;
     if (state.contextPopup) {
       if (state.contextPopupShowing)
         state.contextPopup.removeEventListener("popupshowing", state.contextPopupShowing, true);
@@ -484,6 +488,28 @@
   };
 
   if (!install()) {
+    // Thunderbird creates the Tasks panel lazily. The old 0.3.0 build stopped
+    // retrying after 15 seconds, so opening Tasks later left TaskFix inactive.
+    // Keep observing the DOM until the real Tasks toolbar exists.
+    if (typeof MutationObserver === "function") {
+      state.readyObserver = new MutationObserver(() => {
+        if (install()) {
+          state.readyObserver?.disconnect();
+          state.readyObserver = null;
+          if (state.retryTimer !== null) {
+            clearInterval(state.retryTimer);
+            state.retryTimer = null;
+          }
+        }
+      });
+      state.readyObserver.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+      });
+    }
+
+    // Fast path for installations where the Tasks panel appears shortly after
+    // startup. The observer remains the correctness path for later creation.
     let attempts = 0;
     state.retryTimer = setInterval(() => {
       attempts++;

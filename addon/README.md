@@ -2,7 +2,7 @@
 
 Current standalone build: 0.2.0 for official Thunderbird 153.x.
 
-This is a Thunderbird enhancement add-on. It is independent of CalDAV Assistant and does not patch or replace Thunderbird application files.
+This is a standalone Thunderbird enhancement add-on. It does not patch or replace Thunderbird application files and has no dependency on any companion application.
 
 ## 0.2.0
 

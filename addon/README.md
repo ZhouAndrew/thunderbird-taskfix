@@ -1,6 +1,6 @@
 # Thunderbird CalDAV Lab
 
-Current build: **0.3.4** for official Thunderbird 153.x.
+Current build: **0.3.5** for official Thunderbird 153.x.
 
 This project is a Thunderbird extension. It is **not** the separate Python/CLI CalDAV Assistant project.
 
@@ -28,6 +28,17 @@ Thunderbird CalDAV Lab XPI
 ```
 
 There is no Native Host, no Python process, no companion daemon, and no second CalDAV client in this add-on.
+
+## 0.3.5 production diagnostics
+
+- Adds a profile-local JSONL diagnostic log owned by the extension: `thunderbird-caldav-lab.log`.
+- Adds a **诊断** tab that shows the exact log path and supports Refresh, Copy and Clear.
+- Records startup, TaskFix injection, provider mutations, slow reads and errors without logging task/event descriptions.
+- Password/secret/token/authorization/credential-shaped detail fields are redacted before writing.
+- Rotates the current log at about 1 MiB and keeps one backup.
+- Real Thunderbird acceptance verifies diagnostics persistence, redaction and survival across restart.
+- CI always publishes the extension log plus Thunderbird/Radicale diagnostics, including failed jobs.
+- Keeps the 0.3.4 supported Thunderbird contract (**153.0.2 through 153.1.x**) unchanged.
 
 ## 0.3.4 supported-version contract
 

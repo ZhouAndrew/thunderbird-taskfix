@@ -9,6 +9,12 @@ var {
 var { cal } = ChromeUtils.importESModule(
   "resource:///modules/calendar/calUtils.sys.mjs"
 );
+var { CalTodo } = ChromeUtils.importESModule(
+  "resource:///modules/CalTodo.sys.mjs"
+);
+var { CalEvent } = ChromeUtils.importESModule(
+  "resource:///modules/CalEvent.sys.mjs"
+);
 
 const TASK_STATUSES = new Set([
   "",
@@ -391,7 +397,7 @@ async function listEventsApi(calendarId = "", start = "", end = "") {
 
 async function createTaskApi(calendarId, values) {
   const calendar = writableCalendarById(calendarId, "task");
-  const task = cal.createTodo();
+  const task = new CalTodo();
   task.id = cal.getUUID();
   task.calendar = calendar;
   applyTaskChanges(task, values || {});
@@ -417,7 +423,7 @@ async function deleteTaskApi(calendarId, itemId) {
 
 async function createEventApi(calendarId, values) {
   const calendar = writableCalendarById(calendarId, "event");
-  const event = cal.createEvent();
+  const event = new CalEvent();
   event.id = cal.getUUID();
   event.calendar = calendar;
   applyEventChanges(event, values || {});

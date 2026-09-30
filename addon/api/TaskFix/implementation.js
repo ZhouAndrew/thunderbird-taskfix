@@ -6,10 +6,8 @@ var { ExtensionCommon } = ChromeUtils.importESModule(
 var { ExtensionSupport } = ChromeUtils.importESModule(
   "resource:///modules/ExtensionSupport.sys.mjs"
 );
-var { Services } = ChromeUtils.importESModule(
-  "resource://gre/modules/Services.sys.mjs"
-);
-
+// Thunderbird 153 exposes Services as a privileged extension-parent global.
+// Do not import the removed Services.sys.mjs resource.
 const MESSENGER_URL = "chrome://messenger/content/messenger.xhtml";
 
 this.TaskFix = class extends ExtensionCommon.ExtensionAPI {

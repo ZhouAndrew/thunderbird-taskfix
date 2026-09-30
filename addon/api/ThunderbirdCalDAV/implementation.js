@@ -15,12 +15,6 @@ var { CalTodo } = ChromeUtils.importESModule(
 var { CalEvent } = ChromeUtils.importESModule(
   "resource:///modules/CalEvent.sys.mjs"
 );
-var { CalTodo } = ChromeUtils.importESModule(
-  "resource:///modules/CalTodo.sys.mjs"
-);
-var { CalEvent } = ChromeUtils.importESModule(
-  "resource:///modules/CalEvent.sys.mjs"
-);
 
 const TASK_STATUSES = new Set([
   "",
@@ -161,6 +155,9 @@ function taskView(item) {
     completedDate: dateView(item.completedDate),
     description: String(item.getProperty("DESCRIPTION") || ""),
     recurring: Boolean(item.recurrenceInfo || item.recurrenceId),
+    paused:
+      String(item.getProperty("X-CALDAV-ASSISTANT-PAUSED") || "").toUpperCase() ===
+      "TRUE",
   };
 }
 
@@ -180,6 +177,10 @@ function eventView(item) {
     categories: categoriesOf(item),
     description: String(item.getProperty("DESCRIPTION") || ""),
     recurring: Boolean(item.recurrenceInfo || item.recurrenceId),
+    taskUid: String(item.getProperty("X-CALDAV-ASSISTANT-TASK-UID") || ""),
+    workSession:
+      String(item.getProperty("X-CALDAV-ASSISTANT-WORK-SESSION") || "").toUpperCase() ===
+      "TRUE",
   };
 }
 
@@ -295,6 +296,13 @@ function applyTaskChanges(item, changes) {
   if ("categories" in changes) setCategories(item, changes.categories);
   if ("due" in changes) item.dueDate = fromInputDate(changes.due);
   if ("start" in changes) item.entryDate = fromInputDate(changes.start);
+  if ("paused" in changes) {
+    if (changes.paused) {
+      item.setProperty("X-CALDAV-ASSISTANT-PAUSED", "TRUE");
+    } else {
+      item.deleteProperty("X-CALDAV-ASSISTANT-PAUSED");
+    }
+  }
 
   if ("status" in changes) {
     const status = normalizeTaskStatus(changes.status);
@@ -365,16 +373,29 @@ function applyEventChanges(item, changes) {
     if (status) item.status = status;
     else item.deleteProperty("STATUS");
   }
+  if ("taskUid" in changes) {
+    if (changes.taskUid) {
+      item.setProperty("X-CALDAV-ASSISTANT-TASK-UID", String(changes.taskUid));
+    } else {
+      item.deleteProperty("X-CALDAV-ASSISTANT-TASK-UID");
+    }
+  }
+  if ("workSession" in changes) {
+    if (changes.workSession) {
+      item.setProperty("X-CALDAV-ASSISTANT-WORK-SESSION", "TRUE");
+    } else {
+      item.deleteProperty("X-CALDAV-ASSISTANT-WORK-SESSION");
+    }
+  }
 }
 
 function validateEvent(item) {
   if (!item.startDate) {
     throw new ExtensionError("Event start is required");
   }
-  if (!item.endDate) {
-    item.endDate = item.startDate.clone();
-  }
-  if (item.endDate.compare(item.startDate) < 0) {
+  // DTEND is intentionally optional. CalDAV Assistant keeps the current work
+  // session open until Pause/Complete/Cancel closes it.
+  if (item.endDate && item.endDate.compare(item.startDate) < 0) {
     throw new ExtensionError("Event end must not be before its start");
   }
 }
@@ -435,6 +456,18 @@ async function listEventsApi(calendarId = "", start = "", end = "") {
       )
   );
   return batches.flat();
+}
+
+async function getTaskApi(calendarId, itemId) {
+  const calendar = calendarById(calendarId);
+  const item = await findItem(calendar, itemId, "task");
+  return taskView(item);
+}
+
+async function getEventApi(calendarId, itemId) {
+  const calendar = calendarById(calendarId);
+  const item = await findItem(calendar, itemId, "event");
+  return eventView(item);
 }
 
 async function createTaskApi(calendarId, values) {
@@ -498,6 +531,8 @@ this.ThunderbirdCalDAV = class extends ExtensionAPI {
         listCalendars: listCalendarsApi,
         listTasks: listTasksApi,
         listEvents: listEventsApi,
+        getTask: getTaskApi,
+        getEvent: getEventApi,
         createTask: createTaskApi,
         updateTask: updateTaskApi,
         deleteTask: deleteTaskApi,

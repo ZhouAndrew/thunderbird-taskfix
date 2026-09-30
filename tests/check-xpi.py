@@ -16,7 +16,7 @@ with zipfile.ZipFile(path) as z:
     assert required <= names, required - names
     manifest = json.loads(z.read("manifest.json"))
     assert manifest["name"] == "Thunderbird TaskFix"
-    assert manifest["version"] == "0.3.0"
+    assert manifest["version"] == "0.3.1"
     assert manifest["browser_specific_settings"]["gecko"]["id"] == "ZhouAndrew.thunderbird-taskfix@addons.thunderbird.net"
     assert manifest["background"]["scripts"] == ["background.js"]
     assert manifest["browser_specific_settings"]["gecko"]["strict_min_version"] == "153.0"

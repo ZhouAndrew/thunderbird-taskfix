@@ -37,14 +37,42 @@ const task = {
 
 let eventCounter = 0;
 const events = new Map();
+const faults = {
+  corruptNextWorkReadback: false,
+  failNextPausedWrite: false,
+  failNextCompleteWrite: false,
+  throwAfterNextEventCreate: false,
+};
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function resetTask() {
+  task.status = "NEEDS-ACTION";
+  task.paused = false;
+  task.percentComplete = 0;
+}
+
+function resetAll() {
+  resetTask();
+  events.clear();
+  eventCounter = 0;
+  for (const key of Object.keys(storage)) delete storage[key];
+  for (const key of Object.keys(faults)) faults[key] = false;
+}
+
 browser.ThunderbirdCalDAV = {
   async updateTask(calendarId, itemId, changes) {
     assert(calendarId === task.calendarId && itemId === task.id, "wrong task target");
+    if (faults.failNextPausedWrite && changes.paused === true) {
+      faults.failNextPausedWrite = false;
+      throw new Error("simulated paused write failure");
+    }
+    if (faults.failNextCompleteWrite && changes.status === "COMPLETED") {
+      faults.failNextCompleteWrite = false;
+      throw new Error("simulated complete write failure");
+    }
     if ("status" in changes) task.status = changes.status || "";
     if ("paused" in changes) task.paused = Boolean(changes.paused);
     if ("percentComplete" in changes) task.percentComplete = Number(changes.percentComplete);
@@ -56,7 +84,7 @@ browser.ThunderbirdCalDAV = {
     return clone(task);
   },
   async createEvent(calendarId, values) {
-    const id = "work-" + (++eventCounter);
+    const id = values.id || "work-" + (++eventCounter);
     const event = {
       id,
       calendarId,
@@ -69,6 +97,10 @@ browser.ThunderbirdCalDAV = {
       status: values.status || "",
     };
     events.set(id, event);
+    if (faults.throwAfterNextEventCreate) {
+      faults.throwAfterNextEventCreate = false;
+      throw new Error("simulated uncertain create response");
+    }
     return clone(event);
   },
   async updateEvent(calendarId, itemId, changes) {
@@ -84,40 +116,57 @@ browser.ThunderbirdCalDAV = {
   async getEvent(calendarId, itemId) {
     const event = events.get(itemId);
     if (!event || event.calendarId !== calendarId) throw new Error("Calendar item not found");
-    return clone(event);
+    const result = clone(event);
+    if (faults.corruptNextWorkReadback && result.workSession) {
+      faults.corruptNextWorkReadback = false;
+      result.taskUid = "";
+    }
+    return result;
+  },
+  async deleteEvent(calendarId, itemId) {
+    const event = events.get(itemId);
+    if (!event || event.calendarId !== calendarId) {
+      throw new Error("Calendar item not found");
+    }
+    events.delete(itemId);
+    return {ok: true, id: itemId};
   },
 };
 
 global.window = global;
 
-for (const path of ["addon/core/storage.js", "addon/core/executor.js"]) {
-  vm.runInThisContext(fs.readFileSync(path, "utf8"), {filename: path});
+for (const script of ["addon/core/storage.js", "addon/core/executor.js"]) {
+  vm.runInThisContext(fs.readFileSync(script, "utf8"), {filename: script});
 }
 
-(async () => {
+async function normalLifecycle() {
   let receipt = await AssistantExecutor.start(clone(task), "work");
   assert(receipt.success, "start failed");
   assert(task.status === "IN-PROCESS", "start did not set task IN-PROCESS");
   assert(task.paused === false, "start incorrectly paused task");
+
   let runtime = await AssistantStorage.getRuntime();
   assert(runtime.state === "working", "runtime is not working after start");
-  assert(runtime.currentWorkEvent?.id === "work-1", "start did not persist Work VEVENT");
-  assert(events.get("work-1").end === null, "start Work VEVENT is not open");
+  const firstWorkId = runtime.currentWorkEvent?.id;
+  assert(firstWorkId && events.has(firstWorkId), "start did not persist Work VEVENT");
+  assert(events.get(firstWorkId).end === null, "start Work VEVENT is not open");
 
   receipt = await AssistantExecutor.pause(clone(task));
   assert(receipt.success, "pause failed");
   assert(task.status === "IN-PROCESS" && task.paused, "pause task state wrong");
   runtime = await AssistantStorage.getRuntime();
   assert(runtime.state === "paused", "runtime is not paused");
-  assert(events.get("work-1").end, "pause did not close first Work VEVENT");
+  assert(events.get(firstWorkId).end, "pause did not close first Work VEVENT");
 
   receipt = await AssistantExecutor.resume(clone(task), "work");
   assert(receipt.success, "resume failed");
   assert(task.paused === false, "resume did not clear paused state");
   runtime = await AssistantStorage.getRuntime();
   assert(runtime.state === "working", "runtime is not working after resume");
-  assert(runtime.currentWorkEvent?.id === "work-2", "resume did not create a second Work VEVENT");
-  assert(events.get("work-2").end === null, "resumed Work VEVENT is not open");
+  const secondWorkId = runtime.currentWorkEvent?.id;
+  assert(secondWorkId && events.has(secondWorkId), "resume did not persist a Work VEVENT");
+  assert(secondWorkId !== firstWorkId, "resume reused the first Work VEVENT");
+  assert(events.get(secondWorkId).end === null, "resumed Work VEVENT is not open");
 
   receipt = await AssistantExecutor.complete(clone(task));
   assert(receipt.success, "complete failed");
@@ -125,7 +174,7 @@ for (const path of ["addon/core/storage.js", "addon/core/executor.js"]) {
   assert(task.percentComplete === 100, "complete did not set 100 percent");
   runtime = await AssistantStorage.getRuntime();
   assert(runtime.state === "idle" && !runtime.currentTask, "runtime was not cleared");
-  assert(events.get("work-2").end, "complete did not close second Work VEVENT");
+  assert(events.get(secondWorkId).end, "complete did not close second Work VEVENT");
   assert(
     receipt.steps.some(step => step.component === "WordPress" && step.operation === "not invoked"),
     "receipt must explicitly say WordPress was not invoked"
@@ -143,7 +192,99 @@ for (const path of ["addon/core/storage.js", "addon/core/executor.js"]) {
   assert(/not the currently working task|already finished/i.test(failure.error), "wrong failure reason");
   const last = await AssistantStorage.getLastReceipt();
   assert(last?.id === failure.id, "failed receipt was not persisted");
+}
 
+async function startReadbackRollback() {
+  resetAll();
+  faults.corruptNextWorkReadback = true;
+  const receipt = await AssistantExecutor.start(clone(task), "work");
+  assert(!receipt.success, "corrupt Work VEVENT read-back should fail Start");
+  assert(task.status === "NEEDS-ACTION", "failed Start did not restore original Task status");
+  assert(task.paused === false, "failed Start left Task paused");
+  assert(events.size === 0, "failed Start left an orphan Work VEVENT");
+  const runtime = await AssistantStorage.getRuntime();
+  assert(runtime.state === "idle", "failed Start did not restore idle runtime");
+  assert(
+    receipt.steps.some(step => step.component === "Rollback" && step.operation === "delete created VEVENT" && step.success),
+    "failed Start did not record verified VEVENT cleanup"
+  );
+  assert(
+    receipt.steps.some(step => step.component === "Rollback" && step.operation === "restore task state" && step.success),
+    "failed Start did not record verified Task rollback"
+  );
+}
+
+async function uncertainCreateRollback() {
+  resetAll();
+  faults.throwAfterNextEventCreate = true;
+  const receipt = await AssistantExecutor.start(clone(task), "work");
+  assert(!receipt.success, "uncertain create response should fail Start");
+  assert(events.size === 0, "uncertain event create left an orphan VEVENT");
+  assert(task.status === "NEEDS-ACTION", "uncertain Start did not restore Task");
+  assert(
+    receipt.steps.some(step => step.operation === "delete created VEVENT" && step.success),
+    "known Work UID did not allow cleanup after uncertain create"
+  );
+}
+
+async function pauseWriteRollback() {
+  resetAll();
+  let receipt = await AssistantExecutor.start(clone(task), "work");
+  assert(receipt.success, "setup Start failed");
+  let runtime = await AssistantStorage.getRuntime();
+  const workId = runtime.currentWorkEvent.id;
+
+  faults.failNextPausedWrite = true;
+  receipt = await AssistantExecutor.pause(clone(task));
+  assert(!receipt.success, "simulated Pause write failure should fail");
+  assert(task.status === "IN-PROCESS" && task.paused === false, "failed Pause changed Task state");
+  assert(events.get(workId)?.end === null, "failed Pause did not reopen Work VEVENT");
+  runtime = await AssistantStorage.getRuntime();
+  assert(runtime.state === "working" && runtime.currentWorkEvent?.id === workId, "failed Pause changed runtime");
+}
+
+async function resumeReadbackRollback() {
+  resetAll();
+  let receipt = await AssistantExecutor.start(clone(task), "work");
+  assert(receipt.success, "setup Start failed");
+  receipt = await AssistantExecutor.pause(clone(task));
+  assert(receipt.success, "setup Pause failed");
+  const beforeEvents = new Set(events.keys());
+
+  faults.corruptNextWorkReadback = true;
+  receipt = await AssistantExecutor.resume(clone(task), "work");
+  assert(!receipt.success, "corrupt Resume VEVENT read-back should fail");
+  assert(task.status === "IN-PROCESS" && task.paused === true, "failed Resume did not restore paused Task");
+  assert(events.size === beforeEvents.size, "failed Resume left an extra Work VEVENT");
+  for (const id of beforeEvents) assert(events.has(id), "failed Resume removed previous Work VEVENT");
+  const runtime = await AssistantStorage.getRuntime();
+  assert(runtime.state === "paused" && !runtime.currentWorkEvent, "failed Resume did not restore paused runtime");
+}
+
+async function completeWriteRollback() {
+  resetAll();
+  let receipt = await AssistantExecutor.start(clone(task), "work");
+  assert(receipt.success, "setup Start failed");
+  let runtime = await AssistantStorage.getRuntime();
+  const workId = runtime.currentWorkEvent.id;
+
+  faults.failNextCompleteWrite = true;
+  receipt = await AssistantExecutor.complete(clone(task));
+  assert(!receipt.success, "simulated Complete write failure should fail");
+  assert(task.status === "IN-PROCESS" && task.percentComplete === 0, "failed Complete changed Task");
+  assert(events.get(workId)?.end === null, "failed Complete did not reopen Work VEVENT");
+  runtime = await AssistantStorage.getRuntime();
+  assert(runtime.state === "working" && runtime.currentWorkEvent?.id === workId, "failed Complete changed runtime");
+}
+
+(async () => {
+  resetAll();
+  await normalLifecycle();
+  await startReadbackRollback();
+  await uncertainCreateRollback();
+  await pauseWriteRollback();
+  await resumeReadbackRollback();
+  await completeWriteRollback();
   console.log("workflow-harness: PASS");
 })().catch(error => {
   console.error(error);

@@ -1,11 +1,11 @@
-/* Thunderbird TaskFix Lab 0.1.1 */
+/* Thunderbird TaskFix 0.2.0 — standalone Thunderbird enhancement */
 (() => {
   const win = globalThis;
-  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V1_1";
+  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V2_0";
   if (win.__taskfixAddonState?.marker === MARKER) return;
 
   try { win.__taskfixAddonCleanup?.(); } catch (e) {
-    console.warn("[TaskFix Lab] Previous cleanup failed", e);
+    console.warn("[TaskFix] Previous cleanup failed", e);
   }
 
   const state = {
@@ -24,7 +24,7 @@
     if (!tree) return [];
     try { return Array.from(tree.selectedTasks ?? []).filter(Boolean); }
     catch (e) {
-      console.warn("[TaskFix Lab] Could not read selectedTasks", e);
+      console.warn("[TaskFix] Could not read selectedTasks", e);
       return [];
     }
   }
@@ -151,6 +151,17 @@
     });
   }
 
+  function patchedPriority(priority) {
+    const tabType = gTabmail && gTabmail.currentTabInfo.mode.type;
+    if (tabType == "calendarTask" || tabType == "calendarEvent") {
+      editConfigState({priority});
+      return;
+    }
+    taskfixModifySelectedTasks(newTask => {
+      newTask.priority = priority;
+    });
+  }
+
   function changeStatus(status) {
     const allowed = new Set([null, "NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED"]);
     if (!allowed.has(status)) throw new Error(`Unsupported VTODO status: ${status}`);
@@ -161,14 +172,22 @@
         newTask.isCompleted = true;
         return;
       }
+
       newTask.isCompleted = false;
-      if (status === null) return;
+      newTask.completedDate = null;
+
+      if (status === null) {
+        newTask.deleteProperty("STATUS");
+        newTask.percentComplete = 0;
+        return;
+      }
 
       newTask.status = status;
       if (status === "NEEDS-ACTION") {
         newTask.percentComplete = 0;
-      } else if (status === "IN-PROCESS" && previousPercent > 0 && previousPercent < 100) {
-        newTask.percentComplete = previousPercent;
+      } else if (status === "IN-PROCESS") {
+        newTask.percentComplete =
+          previousPercent > 0 && previousPercent < 100 ? previousPercent : 0;
       }
     });
   }
@@ -390,6 +409,7 @@
     if (state.installed || !ready()) return false;
 
     state.originals.contextChangeTaskProgress = win.contextChangeTaskProgress;
+    state.originals.contextChangeTaskPriority = win.contextChangeTaskPriority;
     state.originals.loadCategories = taskDetailsView.loadCategories;
     state.originals.saveCategories = taskDetailsView.saveCategories;
     state.originals.categoryTextboxKeypress = taskDetailsView.categoryTextboxKeypress;
@@ -398,6 +418,7 @@
     win.getTaskFixSelectedTasks = getTaskFixSelectedTasks;
     win.taskfixModifySelectedTasks = taskfixModifySelectedTasks;
     win.contextChangeTaskProgress = patchedProgress;
+    win.contextChangeTaskPriority = patchedPriority;
     win.contextChangeTaskStatus = changeStatus;
     taskDetailsView.loadCategories = loadCategories;
     taskDetailsView.saveCategories = saveCategories;
@@ -409,7 +430,7 @@
     addContextStatusMenu();
 
     state.installed = true;
-    console.info("[TaskFix Lab] 0.1.1 installed");
+    console.info("[TaskFix] 0.2.0 installed");
     return true;
   }
 
@@ -426,6 +447,7 @@
 
     if (state.installed) {
       win.contextChangeTaskProgress = state.originals.contextChangeTaskProgress;
+      win.contextChangeTaskPriority = state.originals.contextChangeTaskPriority;
       delete win.contextChangeTaskStatus;
       delete win.taskfixModifySelectedTasks;
       delete win.getTaskFixSelectedTasks;

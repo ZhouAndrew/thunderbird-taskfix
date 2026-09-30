@@ -1,11 +1,13 @@
 {
   "manifest_version": 2,
-  "name": "Thunderbird CalDAV Lab",
-  "description": "Direct Thunderbird Tasks and Calendar workspace. Reads and writes through Thunderbird's own calendar providers; no Native Host or companion CalDAV client.",
-  "version": "0.3.4",
+  "name": "CalDAV Assistant Experimental",
+  "description": "State-driven CalDAV/Radicale task workflow with verified work sessions, independent connection diagnostics, persistent audit logs and WordPress logging.",
+  "version": "0.3.5",
   "author": "ZhouAndrew",
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "browser_specific_settings": {
     "gecko": {
@@ -18,19 +20,40 @@
     "TaskFix": {
       "schema": "api/TaskFix/schema.json",
       "parent": {
-        "scopes": ["addon_parent"],
-        "paths": [["TaskFix"]],
+        "scopes": [
+          "addon_parent"
+        ],
+        "paths": [
+          [
+            "TaskFix"
+          ]
+        ],
         "script": "api/TaskFix/implementation.js",
-        "events": ["startup"]
+        "events": [
+          "startup"
+        ]
       }
     },
     "ThunderbirdCalDAV": {
       "schema": "api/ThunderbirdCalDAV/schema.json",
       "parent": {
-        "scopes": ["addon_parent"],
-        "paths": [["ThunderbirdCalDAV"]],
+        "scopes": [
+          "addon_parent"
+        ],
+        "paths": [
+          [
+            "ThunderbirdCalDAV"
+          ]
+        ],
         "script": "api/ThunderbirdCalDAV/implementation.js"
       }
     }
-  }
+  },
+  "permissions": [
+    "storage"
+  ],
+  "optional_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ]
 }

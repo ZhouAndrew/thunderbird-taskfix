@@ -1,7 +1,7 @@
-/* Thunderbird TaskFix 0.3.1 — standalone Thunderbird enhancement */
+/* Thunderbird TaskFix 0.3.2 — standalone Thunderbird enhancement */
 (() => {
   const win = globalThis;
-  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V3_1";
+  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V3_2";
   if (win.__taskfixAddonState?.marker === MARKER) return;
 
   try { win.__taskfixAddonCleanup?.(); } catch (e) {
@@ -18,6 +18,7 @@
     contextPopup: null,
     contextPopupShowing: null,
     contextPopupHiding: null,
+    keydownHandler: null,
   };
   win.__taskfixAddonState = state;
 
@@ -84,21 +85,75 @@
       document.getElementById("task-actions-markcompleted");
   }
 
-  function refreshUndoCommand() {
+  function refreshUndoRedoCommands() {
     try {
+      if (typeof updateUndoRedoMenu === "function") {
+        updateUndoRedoMenu();
+        return;
+      }
       if (typeof goUpdateCommand === "function") {
         goUpdateCommand("cmd_undo");
+        goUpdateCommand("cmd_redo");
       }
     } catch (error) {
-      console.warn("[TaskFix] Could not refresh native Undo command", error);
+      console.warn("[TaskFix] Could not refresh calendar Undo/Redo commands", error);
     }
   }
 
   function taskfixUndo() {
-    if (typeof goDoCommand !== "function") return false;
-    goDoCommand("cmd_undo");
-    refreshUndoCommand();
+    if (typeof canUndo === "function" && !canUndo()) return false;
+    if (typeof undo !== "function") return false;
+    // IMPORTANT: Thunderbird calendar/task edits use CalTransactionManager.
+    // goDoCommand("cmd_undo") may resolve to the mail/editor undo stack instead.
+    undo();
+    refreshUndoRedoCommands();
     return true;
+  }
+
+  function taskfixRedo() {
+    if (typeof canRedo === "function" && !canRedo()) return false;
+    if (typeof redo !== "function") return false;
+    redo();
+    refreshUndoRedoCommands();
+    return true;
+  }
+
+  function isEditableTarget(target) {
+    if (!target) return false;
+    if (target.isContentEditable) return true;
+    const name = String(target.localName || target.tagName || "").toLowerCase();
+    if (name === "input" || name === "textarea") return true;
+    try {
+      return Boolean(target.closest?.("input, textarea, [contenteditable='true'], [contenteditable='']"));
+    } catch {
+      return false;
+    }
+  }
+
+  function taskUiIsActive() {
+    const trees = [
+      document.getElementById("calendar-task-tree"),
+      document.getElementById("unifinder-todo-tree"),
+    ].filter(Boolean);
+    return trees.some(isTreeVisible);
+  }
+
+  function installUndoShortcutBridge() {
+    if (state.keydownHandler || typeof win.addEventListener !== "function") return;
+
+    state.keydownHandler = event => {
+      if (event.defaultPrevented || event.altKey || !(event.ctrlKey || event.metaKey)) return;
+      if (String(event.key).toLowerCase() !== "z") return;
+      if (!taskUiIsActive() || isEditableTarget(event.target)) return;
+
+      const handled = event.shiftKey ? taskfixRedo() : taskfixUndo();
+      if (!handled) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+    };
+    win.addEventListener("keydown", state.keydownHandler, true);
   }
 
   function taskfixModifySelectedTasks(mutator) {
@@ -145,7 +200,7 @@
       }
     } finally {
       endBatchTransaction();
-      refreshUndoCommand();
+      refreshUndoRedoCommands();
     }
     return tasks.length;
   }
@@ -438,6 +493,7 @@
     win.getTaskFixSelectedTasks = getTaskFixSelectedTasks;
     win.taskfixModifySelectedTasks = taskfixModifySelectedTasks;
     win.taskfixUndo = taskfixUndo;
+    win.taskfixRedo = taskfixRedo;
     win.contextChangeTaskProgress = patchedProgress;
     win.contextChangeTaskPriority = patchedPriority;
     win.contextChangeTaskStatus = changeStatus;
@@ -447,11 +503,12 @@
     taskDetailsView.taskfixCategoryCommand = categoryCommand;
 
     installContextSelectionTracking();
+    installUndoShortcutBridge();
     addToolbarStatusMenu();
     addContextStatusMenu();
 
     state.installed = true;
-    console.info("[TaskFix] 0.3.1 installed");
+    console.info("[TaskFix] 0.3.2 installed");
     return true;
   }
 
@@ -459,6 +516,10 @@
     if (state.retryTimer !== null) clearInterval(state.retryTimer);
     state.readyObserver?.disconnect();
     state.readyObserver = null;
+    if (state.keydownHandler && typeof win.removeEventListener === "function") {
+      win.removeEventListener("keydown", state.keydownHandler, true);
+      state.keydownHandler = null;
+    }
     if (state.contextPopup) {
       if (state.contextPopupShowing)
         state.contextPopup.removeEventListener("popupshowing", state.contextPopupShowing, true);
@@ -474,6 +535,7 @@
       delete win.contextChangeTaskStatus;
       delete win.taskfixModifySelectedTasks;
       delete win.taskfixUndo;
+      delete win.taskfixRedo;
       delete win.getTaskFixSelectedTasks;
       taskDetailsView.loadCategories = state.originals.loadCategories;
       taskDetailsView.saveCategories = state.originals.saveCategories;

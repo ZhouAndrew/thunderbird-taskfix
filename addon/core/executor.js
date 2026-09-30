@@ -160,6 +160,7 @@
         `CalDAV Assistant work session\nTask UID: ${task.id}\nTask Calendar: ${task.calendarName || task.calendarId}`,
       taskUid: task.id,
       workSession: true,
+      workOpen: true,
     });
       step(receipt, "Work Session", "create VEVENT", true, {
         uid: created.id,
@@ -169,6 +170,7 @@
         end: created.end?.icalString || null,
         taskUid: created.taskUid,
         workSession: created.workSession,
+        workOpen: created.workOpen,
       });
 
       const stored = await browser.ThunderbirdCalDAV.getEvent(
@@ -180,14 +182,15 @@
           `Work VEVENT read-back lost relation: taskUid=${stored.taskUid || "(empty)"}, workSession=${String(stored.workSession)}`
         );
       }
-      if (stored.end) {
+      if (!stored.workOpen) {
         throw new Error(
-          `A new Work VEVENT must remain open; read-back DTEND=${stored.end?.icalString || "present"}`
+          "Work VEVENT read-back lost X-CALDAV-ASSISTANT-WORK-OPEN."
         );
       }
       step(receipt, "Work Session", "read-back VEVENT", true, {
         uid: stored.id,
-        open: !stored.end,
+        open: stored.workOpen,
+        providerEnd: stored.end?.icalString || null,
         taskUid: stored.taskUid,
         workSession: stored.workSession,
       });
@@ -208,6 +211,7 @@
     if (!workEvent?.id || !workEvent?.calendarId) return null;
     await browser.ThunderbirdCalDAV.updateEvent(workEvent.calendarId, workEvent.id, {
       end: endedAt,
+      workOpen: false,
     });
     step(receipt, "Work Session", "close VEVENT", true, {
       uid: workEvent.id,
@@ -217,12 +221,15 @@
       workEvent.calendarId,
       workEvent.id
     );
-    if (!stored.end) {
-      throw new Error("Work VEVENT read-back is still open after close.");
+    if (!stored.end || stored.workOpen) {
+      throw new Error(
+        `Work VEVENT close read-back mismatch: DTEND=${stored.end?.icalString || "(missing)"}, workOpen=${String(stored.workOpen)}`
+      );
     }
     step(receipt, "Work Session", "read-back closed VEVENT", true, {
       uid: stored.id,
       end: stored.end?.icalString || null,
+      workOpen: stored.workOpen,
     });
     return stored;
   }
@@ -232,13 +239,20 @@
     try {
       await browser.ThunderbirdCalDAV.updateEvent(workEvent.calendarId, workEvent.id, {
         end: null,
+        workOpen: true,
       });
       const stored = await browser.ThunderbirdCalDAV.getEvent(
         workEvent.calendarId,
         workEvent.id
       );
-      if (stored.end) throw new Error("Rollback read-back still contains DTEND.");
-      step(receipt, "Rollback", "reopen VEVENT", true, {uid: stored.id});
+      if (!stored.workOpen) {
+        throw new Error("Rollback read-back did not restore Work-open marker.");
+      }
+      step(receipt, "Rollback", "reopen VEVENT", true, {
+        uid: stored.id,
+        providerEnd: stored.end?.icalString || null,
+        workOpen: stored.workOpen,
+      });
       return true;
     } catch (error) {
       step(receipt, "Rollback", "reopen VEVENT", false, {

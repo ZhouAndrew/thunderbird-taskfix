@@ -1,7 +1,7 @@
-/* Thunderbird TaskFix 0.2.1 — standalone Thunderbird enhancement */
+/* Thunderbird TaskFix 0.3.0 — standalone Thunderbird enhancement */
 (() => {
   const win = globalThis;
-  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V2_1";
+  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V3_0";
   if (win.__taskfixAddonState?.marker === MARKER) return;
 
   try { win.__taskfixAddonCleanup?.(); } catch (e) {
@@ -82,6 +82,23 @@
       document.getElementById("task-actions-toolbar");
   }
 
+  function refreshUndoCommand() {
+    try {
+      if (typeof goUpdateCommand === "function") {
+        goUpdateCommand("cmd_undo");
+      }
+    } catch (error) {
+      console.warn("[TaskFix] Could not refresh native Undo command", error);
+    }
+  }
+
+  function taskfixUndo() {
+    if (typeof goDoCommand !== "function") return false;
+    goDoCommand("cmd_undo");
+    refreshUndoCommand();
+    return true;
+  }
+
   function taskfixModifySelectedTasks(mutator) {
     const tasks = getTaskFixSelectedTasks();
     if (!tasks.length) return 0;
@@ -126,6 +143,7 @@
       }
     } finally {
       endBatchTransaction();
+      refreshUndoCommand();
     }
     return tasks.length;
   }
@@ -417,6 +435,7 @@
 
     win.getTaskFixSelectedTasks = getTaskFixSelectedTasks;
     win.taskfixModifySelectedTasks = taskfixModifySelectedTasks;
+    win.taskfixUndo = taskfixUndo;
     win.contextChangeTaskProgress = patchedProgress;
     win.contextChangeTaskPriority = patchedPriority;
     win.contextChangeTaskStatus = changeStatus;
@@ -430,7 +449,7 @@
     addContextStatusMenu();
 
     state.installed = true;
-    console.info("[TaskFix] 0.2.1 installed");
+    console.info("[TaskFix] 0.3.0 installed");
     return true;
   }
 
@@ -450,6 +469,7 @@
       win.contextChangeTaskPriority = state.originals.contextChangeTaskPriority;
       delete win.contextChangeTaskStatus;
       delete win.taskfixModifySelectedTasks;
+      delete win.taskfixUndo;
       delete win.getTaskFixSelectedTasks;
       taskDetailsView.loadCategories = state.originals.loadCategories;
       taskDetailsView.saveCategories = state.originals.saveCategories;

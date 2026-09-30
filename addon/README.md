@@ -1,8 +1,16 @@
 # Thunderbird TaskFix XPI
 
-Current standalone build: 0.3.1 for official Thunderbird 153.x.
+Current standalone build: 0.3.2 for official Thunderbird 153.x.
 
 This is a standalone Thunderbird enhancement add-on. It does not patch or replace Thunderbird application files and has no dependency on any companion application.
+
+## 0.3.2
+
+- Fixes Undo in the real Thunderbird Tasks UI.
+- TaskFix 0.3.0/0.3.1 incorrectly delegated its helper to the generic `goDoCommand("cmd_undo")`, which can resolve to Thunderbird's mail/editor undo stack instead of the Calendar transaction stack.
+- TaskFix now calls Thunderbird Calendar's native `undo()` / `redo()` path, which uses `CalTransactionManager`.
+- Adds a narrow Ctrl+Z / Ctrl+Shift+Z bridge while a Tasks tree is visible; editable text fields keep their normal text-editor undo.
+- The bridge is removed cleanly when TaskFix is disabled/uninstalled.
 
 ## 0.3.1
 

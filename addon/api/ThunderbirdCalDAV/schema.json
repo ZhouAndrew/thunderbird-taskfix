@@ -9,7 +9,9 @@
         "async": true,
         "description": "List enabled and disabled Thunderbird calendars.",
         "parameters": [],
-        "returns": {"type": "any"}
+        "returns": {
+          "type": "any"
+        }
       },
       {
         "name": "listTasks",
@@ -17,9 +19,15 @@
         "async": true,
         "description": "Read VTODO items from Thunderbird's calendar providers.",
         "parameters": [
-          {"name": "calendarId", "type": "string", "optional": true}
+          {
+            "name": "calendarId",
+            "type": "string",
+            "optional": true
+          }
         ],
-        "returns": {"type": "any"}
+        "returns": {
+          "type": "any"
+        }
       },
       {
         "name": "listEvents",
@@ -27,11 +35,63 @@
         "async": true,
         "description": "Read VEVENT items from Thunderbird's calendar providers.",
         "parameters": [
-          {"name": "calendarId", "type": "string", "optional": true},
-          {"name": "start", "type": "string", "optional": true},
-          {"name": "end", "type": "string", "optional": true}
+          {
+            "name": "calendarId",
+            "type": "string",
+            "optional": true
+          },
+          {
+            "name": "start",
+            "type": "string",
+            "optional": true
+          },
+          {
+            "name": "end",
+            "type": "string",
+            "optional": true
+          }
         ],
-        "returns": {"type": "any"}
+        "returns": {
+          "type": "any"
+        }
+      },
+      {
+        "name": "getTask",
+        "type": "function",
+        "async": true,
+        "description": "Read one VTODO by UID from a Thunderbird calendar provider for write/read-back verification.",
+        "parameters": [
+          {
+            "name": "calendarId",
+            "type": "string"
+          },
+          {
+            "name": "itemId",
+            "type": "string"
+          }
+        ],
+        "returns": {
+          "type": "any"
+        }
+      },
+      {
+        "name": "getEvent",
+        "type": "function",
+        "async": true,
+        "description": "Read one VEVENT by UID from a Thunderbird calendar provider for write/read-back verification.",
+        "parameters": [
+          {
+            "name": "calendarId",
+            "type": "string"
+          },
+          {
+            "name": "itemId",
+            "type": "string"
+          }
+        ],
+        "returns": {
+          "type": "any"
+        }
       },
       {
         "name": "createTask",
@@ -39,10 +99,18 @@
         "async": true,
         "description": "Create a VTODO through Thunderbird's selected calendar provider.",
         "parameters": [
-          {"name": "calendarId", "type": "string"},
-          {"name": "values", "type": "any"}
+          {
+            "name": "calendarId",
+            "type": "string"
+          },
+          {
+            "name": "values",
+            "type": "any"
+          }
         ],
-        "returns": {"type": "any"}
+        "returns": {
+          "type": "any"
+        }
       },
       {
         "name": "updateTask",
@@ -50,11 +118,22 @@
         "async": true,
         "description": "Modify a VTODO through Thunderbird's calendar provider.",
         "parameters": [
-          {"name": "calendarId", "type": "string"},
-          {"name": "itemId", "type": "string"},
-          {"name": "changes", "type": "any"}
+          {
+            "name": "calendarId",
+            "type": "string"
+          },
+          {
+            "name": "itemId",
+            "type": "string"
+          },
+          {
+            "name": "changes",
+            "type": "any"
+          }
         ],
-        "returns": {"type": "any"}
+        "returns": {
+          "type": "any"
+        }
       },
       {
         "name": "deleteTask",
@@ -62,10 +141,18 @@
         "async": true,
         "description": "Delete a VTODO through Thunderbird's calendar provider.",
         "parameters": [
-          {"name": "calendarId", "type": "string"},
-          {"name": "itemId", "type": "string"}
+          {
+            "name": "calendarId",
+            "type": "string"
+          },
+          {
+            "name": "itemId",
+            "type": "string"
+          }
         ],
-        "returns": {"type": "any"}
+        "returns": {
+          "type": "any"
+        }
       },
       {
         "name": "createEvent",
@@ -73,10 +160,18 @@
         "async": true,
         "description": "Create a VEVENT through Thunderbird's selected calendar provider.",
         "parameters": [
-          {"name": "calendarId", "type": "string"},
-          {"name": "values", "type": "any"}
+          {
+            "name": "calendarId",
+            "type": "string"
+          },
+          {
+            "name": "values",
+            "type": "any"
+          }
         ],
-        "returns": {"type": "any"}
+        "returns": {
+          "type": "any"
+        }
       },
       {
         "name": "updateEvent",
@@ -84,11 +179,22 @@
         "async": true,
         "description": "Modify a VEVENT through Thunderbird's calendar provider.",
         "parameters": [
-          {"name": "calendarId", "type": "string"},
-          {"name": "itemId", "type": "string"},
-          {"name": "changes", "type": "any"}
+          {
+            "name": "calendarId",
+            "type": "string"
+          },
+          {
+            "name": "itemId",
+            "type": "string"
+          },
+          {
+            "name": "changes",
+            "type": "any"
+          }
         ],
-        "returns": {"type": "any"}
+        "returns": {
+          "type": "any"
+        }
       },
       {
         "name": "deleteEvent",
@@ -96,10 +202,18 @@
         "async": true,
         "description": "Delete a VEVENT through Thunderbird's calendar provider.",
         "parameters": [
-          {"name": "calendarId", "type": "string"},
-          {"name": "itemId", "type": "string"}
+          {
+            "name": "calendarId",
+            "type": "string"
+          },
+          {
+            "name": "itemId",
+            "type": "string"
+          }
         ],
-        "returns": {"type": "any"}
+        "returns": {
+          "type": "any"
+        }
       }
     ],
     "events": [

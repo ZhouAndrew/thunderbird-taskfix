@@ -1,105 +1,97 @@
 "use strict";
 
 const $ = id => document.getElementById(id);
-const state = {calendars: [], tasks: [], events: []};
+const state = {
+  calendars: [],
+  tasks: [],
+  selected: null,
+  runtime: null,
+  workCalendarId: "",
+};
 
-function setStatus(message, error = false) {
+function setStatus(message, kind = "") {
   $("status").textContent = message;
-  $("status").classList.toggle("error", error);
-}
-
-function calendarState(id) {
-  return state.calendars.find(calendar => calendar.id === id) || null;
-}
-
-function splitCategories(value) {
-  return [...new Set(
-    String(value || "")
-      .split(",")
-      .map(x => x.trim())
-      .filter(Boolean)
-  )];
-}
-
-function icalToInput(value, withTime = false) {
-  const text = value?.icalString || "";
-  let m = /^(\d{4})(\d{2})(\d{2})$/.exec(text);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/.exec(text);
-  if (m) {
-    const date = `${m[1]}-${m[2]}-${m[3]}`;
-    return withTime ? `${date}T${m[4]}:${m[5]}` : date;
-  }
-  return "";
+  $("status").className = "status" + (kind ? " " + kind : "");
 }
 
 function displayDate(value) {
-  const input = icalToInput(value, true);
-  return input ? input.replace("T", " ") : "—";
+  if (!value?.icalString) return "—";
+  const text = value.icalString;
+  const date = /^(\d{4})(\d{2})(\d{2})$/.exec(text);
+  if (date) return `${date[1]}-${date[2]}-${date[3]}`;
+  const dt = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/.exec(text);
+  if (dt) return `${dt[1]}-${dt[2]}-${dt[3]} ${dt[4]}:${dt[5]}:${dt[6]}`;
+  return text;
 }
 
-function fillEditorCalendar(selectId, capability) {
-  const select = $(selectId);
-  const selected = select.value;
-  select.replaceChildren();
-
-  for (const calendar of state.calendars) {
-    if (calendar.disabled || !calendar[capability]) continue;
-    const option = document.createElement("option");
-    option.value = calendar.id;
-    option.textContent =
-      calendar.name + (calendar.readOnly ? " · 只读" : "");
-    option.disabled = calendar.readOnly;
-    select.appendChild(option);
-  }
-
-  if ([...select.options].some(option => option.value === selected)) {
-    select.value = selected;
-  } else {
-    const firstWritable = [...select.options].find(option => !option.disabled);
-    if (firstWritable) select.value = firstWritable.value;
-  }
-}
-
-function populateCalendars() {
-  const currentFilter = $("calendar-filter").value;
-  $("calendar-filter").replaceChildren();
-
-  const all = document.createElement("option");
-  all.value = "";
-  all.textContent = "全部 Calendar";
-  $("calendar-filter").appendChild(all);
-
-  for (const calendar of state.calendars) {
-    const option = document.createElement("option");
-    option.value = calendar.id;
-    const flags = [
-      calendar.disabled ? "已停用" : "",
-      calendar.readOnly ? "只读" : "",
-    ].filter(Boolean);
-    option.textContent =
-      calendar.name + (flags.length ? ` · ${flags.join(" · ")}` : "");
-    $("calendar-filter").appendChild(option);
-  }
-
-  $("calendar-filter").value = state.calendars.some(
-    calendar => calendar.id === currentFilter
-  )
-    ? currentFilter
-    : "";
-
-  fillEditorCalendar("task-calendar", "supportsTasks");
-  fillEditorCalendar("event-calendar", "supportsEvents");
+function formatDuration(ms) {
+  const total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const h = String(Math.floor(total / 3600)).padStart(2, "0");
+  const m = String(Math.floor((total % 3600) / 60)).padStart(2, "0");
+  const s = String(total % 60).padStart(2, "0");
+  return `${h}:${m}:${s}`;
 }
 
 function filteredTasks() {
   const calendarId = $("calendar-filter").value;
   const search = $("task-search").value.trim().toLocaleLowerCase();
-  return state.tasks.filter(
-    task =>
-      (!calendarId || task.calendarId === calendarId) &&
-      (!search || task.title.toLocaleLowerCase().includes(search))
+  return state.tasks.filter(task =>
+    (!calendarId || task.calendarId === calendarId) &&
+    (!search ||
+      task.title.toLocaleLowerCase().includes(search) ||
+      task.id.toLocaleLowerCase().includes(search))
   );
+}
+
+function sameTaskRef(ref, task) {
+  return Boolean(
+    ref && task && ref.id === task.id && ref.calendarId === task.calendarId
+  );
+}
+
+function taskByRef(ref) {
+  return state.tasks.find(task => sameTaskRef(ref, task)) || null;
+}
+
+function populateCalendars() {
+  const current = $("calendar-filter").value;
+  $("calendar-filter").replaceChildren();
+
+  const all = document.createElement("option");
+  all.value = "";
+  all.textContent = "全部 Task Calendar";
+  $("calendar-filter").appendChild(all);
+
+  for (const calendar of state.calendars.filter(x => x.supportsTasks && !x.disabled)) {
+    const option = document.createElement("option");
+    option.value = calendar.id;
+    option.textContent = calendar.name + (calendar.readOnly ? " · 只读" : "");
+    $("calendar-filter").appendChild(option);
+  }
+  if ([...$("calendar-filter").options].some(x => x.value === current)) {
+    $("calendar-filter").value = current;
+  }
+
+  const previous = state.workCalendarId;
+  $("work-calendar").replaceChildren();
+  for (const calendar of state.calendars.filter(
+    x => x.supportsEvents && !x.disabled && !x.readOnly
+  )) {
+    const option = document.createElement("option");
+    option.value = calendar.id;
+    option.textContent = calendar.name;
+    $("work-calendar").appendChild(option);
+  }
+
+  const wanted =
+    previous ||
+    state.selected?.calendarId ||
+    [...$("work-calendar").options][0]?.value ||
+    "";
+  if ([...$("work-calendar").options].some(x => x.value === wanted)) {
+    $("work-calendar").value = wanted;
+  }
+  state.workCalendarId = $("work-calendar").value;
 }
 
 function renderTasks() {
@@ -110,324 +102,238 @@ function renderTasks() {
   if (!tasks.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "没有匹配的任务";
+    empty.textContent = "没有匹配的 Task";
     $("task-list").appendChild(empty);
     return;
   }
 
   for (const task of tasks) {
     const row = document.createElement("div");
-    row.className = "item";
-    const categories = task.categories?.length
-      ? ` · ${task.categories.join(", ")}`
-      : "";
-    row.innerHTML = `
-      <div class="item-title"></div>
-      <div class="item-meta"></div>
-    `;
-    row.querySelector(".item-title").textContent = task.title || "(无标题)";
-    row.querySelector(".item-meta").textContent =
-      `${task.calendarName} · ${task.status || "NO STATUS"} · due ${displayDate(task.due)}${categories}`;
-    row.addEventListener("click", () => editTask(task));
+    row.className = "item" + (sameTaskRef(state.selected, task) ? " selected" : "");
+    const title = document.createElement("div");
+    title.className = "item-title";
+    title.textContent = task.title || "(无标题)";
+    const meta = document.createElement("div");
+    meta.className = "item-meta";
+    const paused = task.paused ? " · PAUSED" : "";
+    meta.textContent =
+      `${task.calendarName} · ${task.status || "NO STATUS"}${paused} · due ${displayDate(task.due)}`;
+    row.append(title, meta);
+    row.addEventListener("click", () => {
+      state.selected = task;
+      renderTasks();
+      renderFlow();
+    });
     $("task-list").appendChild(row);
   }
 }
 
-function renderEvents() {
-  const calendarId = $("calendar-filter").value;
-  const events = state.events.filter(
-    event => !calendarId || event.calendarId === calendarId
-  );
-  $("event-count").textContent = String(events.length);
-  $("event-list").replaceChildren();
+function assistantState(task) {
+  if (!task) return "未选择";
+  if (sameTaskRef(state.runtime?.currentTask, task)) {
+    if (state.runtime.state === "working") return "正在进行";
+    if (state.runtime.state === "paused") return "已暂停";
+  }
+  if (task.status === "COMPLETED") return "已完成";
+  if (task.status === "CANCELLED") return "已取消";
+  if (state.runtime?.currentTask) return "未激活（另一个 Task 正在工作）";
+  return "未开始";
+}
 
-  if (!events.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.textContent = "这个时间范围没有事件";
-    $("event-list").appendChild(empty);
+function addAction(label, handler, className = "") {
+  const button = document.createElement("button");
+  button.textContent = label;
+  if (className) button.className = className;
+  button.addEventListener("click", handler);
+  $("actions").appendChild(button);
+}
+
+function renderFlow() {
+  const task = state.selected;
+  $("no-selection").hidden = Boolean(task);
+  $("selection").hidden = !task;
+  $("actions").replaceChildren();
+  $("cancel-confirm").hidden = true;
+
+  if (!task) return;
+
+  $("selected-title").textContent = task.title || "(无标题)";
+  $("selected-calendar").textContent = task.calendarName || task.calendarId;
+  $("selected-uid").textContent = task.id;
+  $("selected-vtodo-state").textContent =
+    (task.status || "NO STATUS") + (task.paused ? " · PAUSED" : "");
+  $("selected-flow-state").textContent = assistantState(task);
+  $("selected-due").textContent = displayDate(task.due);
+  $("selected-category").textContent = task.categories?.join(", ") || "—";
+
+  const current = sameTaskRef(state.runtime?.currentTask, task);
+  const finished = task.status === "COMPLETED" || task.status === "CANCELLED";
+
+  if (current && state.runtime.state === "working") {
+    addAction("暂停", () => runWorkflow("pause"), "primary");
+    addAction("完成", () => runWorkflow("complete"));
+    addAction("取消", () => {$("cancel-confirm").hidden = false;}, "danger");
+    $("flow-note").textContent = "当前 Task 正在工作。";
+  } else if (current && state.runtime.state === "paused") {
+    addAction("继续", () => runWorkflow("resume"), "primary");
+    addAction("完成", () => runWorkflow("complete"));
+    addAction("取消", () => {$("cancel-confirm").hidden = false;}, "danger");
+    $("flow-note").textContent = "当前 Task 已暂停。";
+  } else if (!state.runtime?.currentTask && !finished) {
+    addAction("开始", () => runWorkflow("start"), "primary");
+    $("flow-note").textContent = "开始后会修改已有 VTODO，并创建一个新的 Work VEVENT。";
+  } else if (finished) {
+    $("flow-note").textContent = "这个 Task 已经结束，没有进一步的工作动作。";
+  } else {
+    $("flow-note").textContent =
+      `另一个 Task 正在${state.runtime.state === "paused" ? "暂停" : "进行"}；请先处理当前 Task。`;
+  }
+
+  updateElapsed();
+}
+
+function updateElapsed() {
+  const task = state.selected;
+  if (!task || !sameTaskRef(state.runtime?.currentTask, task)) {
+    if (task) $("selected-elapsed").textContent = "00:00:00";
+    return;
+  }
+  let ms = Number(state.runtime.accumulatedMs || 0);
+  if (state.runtime.state === "working" && state.runtime.segmentStartedAtMs) {
+    ms += Math.max(0, Date.now() - state.runtime.segmentStartedAtMs);
+  }
+  $("selected-elapsed").textContent = formatDuration(ms);
+}
+
+function renderReceipt(receipt) {
+  const root = $("receipt");
+  root.replaceChildren();
+  if (!receipt) {
+    root.textContent = "尚无操作回执。";
     return;
   }
 
-  for (const event of events) {
+  const summary = document.createElement("div");
+  summary.className = "receipt-summary " + (receipt.success ? "ok" : "fail");
+  summary.textContent =
+    `${receipt.success ? "✓" : "✗"} ${receipt.action || "operation"} · ${receipt.summary || receipt.error || ""}`;
+  root.appendChild(summary);
+
+  const meta = document.createElement("div");
+  meta.className = "receipt-meta";
+  const task = receipt.task
+    ? `Task: ${receipt.task.title || ""} · UID ${receipt.task.id || ""}`
+    : "Task: —";
+  meta.textContent =
+    `${task}\n开始: ${receipt.startedAt || "—"}\n完成: ${receipt.completedAt || "—"}`;
+  meta.style.whiteSpace = "pre-line";
+  root.appendChild(meta);
+
+  for (const item of receipt.steps || []) {
     const row = document.createElement("div");
-    row.className = "item";
-    row.innerHTML = `
-      <div class="item-title"></div>
-      <div class="item-meta"></div>
-    `;
-    row.querySelector(".item-title").textContent = event.title || "(无标题)";
-    row.querySelector(".item-meta").textContent =
-      `${event.calendarName} · ${displayDate(event.start)} → ${displayDate(event.end)}`;
-    row.addEventListener("click", () => editEvent(event));
-    $("event-list").appendChild(row);
+    row.className = "receipt-step";
+    const head = document.createElement("strong");
+    head.textContent =
+      `${item.success === false ? "✗" : "✓"} ${item.component || item.name || ""} · ${item.operation || item.name || ""}`;
+    const pre = document.createElement("pre");
+    pre.textContent = JSON.stringify(item.details ?? item, null, 2);
+    row.append(head, pre);
+    root.appendChild(row);
+  }
+
+  if (receipt.error) {
+    const row = document.createElement("div");
+    row.className = "receipt-step";
+    row.textContent = "错误：" + receipt.error;
+    root.appendChild(row);
   }
 }
 
-function setTaskEditorWritable(writable) {
-  $("task-save").disabled = !writable;
-  $("task-delete").disabled = !writable;
-}
+async function runWorkflow(action) {
+  if (!state.selected) return;
+  const task = state.selected;
+  setStatus(`正在执行 ${action}…`);
+  $("actions").querySelectorAll("button").forEach(button => button.disabled = true);
 
-function resetTaskEditor() {
-  $("task-id").value = "";
-  $("task-editor-title").textContent = "新建任务";
-  $("task-title").value = "";
-  $("task-due").value = "";
-  $("task-status").value = "";
-  $("task-priority").value = "0";
-  $("task-categories").value = "";
-  $("task-description").value = "";
-  $("task-calendar").disabled = false;
-  $("task-delete").hidden = true;
-  setTaskEditorWritable(Boolean($("task-calendar").value));
-}
-
-function editTask(task) {
-  const calendar = calendarState(task.calendarId);
-  $("task-id").value = task.id;
-  $("task-editor-title").textContent =
-    calendar?.readOnly ? "查看任务（只读）" : "编辑任务";
-  $("task-calendar").value = task.calendarId;
-  $("task-calendar").disabled = true;
-  $("task-title").value = task.title;
-  $("task-due").value = icalToInput(task.due);
-  $("task-status").value = task.status || "";
-  $("task-priority").value = String(task.priority || 0);
-  $("task-categories").value = (task.categories || []).join(", ");
-  $("task-description").value = task.description || "";
-  $("task-delete").hidden = false;
-  setTaskEditorWritable(Boolean(calendar && !calendar.readOnly && !calendar.disabled));
-}
-
-function taskValues() {
-  return {
-    title: $("task-title").value.trim(),
-    due: $("task-due").value || null,
-    status: $("task-status").value || null,
-    priority: Number($("task-priority").value || 0),
-    categories: splitCategories($("task-categories").value),
-    description: $("task-description").value,
-  };
-}
-
-async function saveTask() {
-  const calendarId = $("task-calendar").value;
-  if (!calendarId) throw new Error("没有可写的 Calendar");
-  const id = $("task-id").value;
-  if (!$("task-title").value.trim()) {
-    throw new Error("任务标题不能为空");
-  }
-
-  setStatus("正在通过 Thunderbird 保存 VTODO…");
-  if (id) {
-    await browser.ThunderbirdCalDAV.updateTask(
-      calendarId,
-      id,
-      taskValues()
-    );
-  } else {
-    await browser.ThunderbirdCalDAV.createTask(calendarId, taskValues());
-  }
-  resetTaskEditor();
-  await refreshTasks();
-  setStatus("Thunderbird 已提交任务修改；CalDAV 同步由 Thunderbird provider 负责。");
-}
-
-async function deleteTask() {
-  const id = $("task-id").value;
-  const calendarId = $("task-calendar").value;
-  if (!id || !confirm("删除这个任务？")) return;
-  setStatus("正在通过 Thunderbird 删除 VTODO…");
-  await browser.ThunderbirdCalDAV.deleteTask(calendarId, id);
-  resetTaskEditor();
-  await refreshTasks();
-  setStatus("任务已删除。");
-}
-
-function setEventEditorWritable(writable) {
-  $("event-save").disabled = !writable;
-  $("event-delete").disabled = !writable;
-}
-
-function resetEventEditor() {
-  $("event-id").value = "";
-  $("event-editor-title").textContent = "新建事件";
-  $("event-title").value = "";
-  $("event-start").value = "";
-  $("event-end").value = "";
-  $("event-categories").value = "";
-  $("event-description").value = "";
-  $("event-calendar").disabled = false;
-  $("event-delete").hidden = true;
-  setEventEditorWritable(Boolean($("event-calendar").value));
-}
-
-function editEvent(event) {
-  const calendar = calendarState(event.calendarId);
-  $("event-id").value = event.id;
-  $("event-editor-title").textContent =
-    calendar?.readOnly ? "查看事件（只读）" : "编辑事件";
-  $("event-calendar").value = event.calendarId;
-  $("event-calendar").disabled = true;
-  $("event-title").value = event.title;
-  $("event-start").value = icalToInput(event.start, true);
-  $("event-end").value = icalToInput(event.end, true);
-  $("event-categories").value = (event.categories || []).join(", ");
-  $("event-description").value = event.description || "";
-  $("event-delete").hidden = false;
-  setEventEditorWritable(Boolean(calendar && !calendar.readOnly && !calendar.disabled));
-}
-
-function eventValues() {
-  return {
-    title: $("event-title").value.trim(),
-    start: $("event-start").value || null,
-    end: $("event-end").value || null,
-    categories: splitCategories($("event-categories").value),
-    description: $("event-description").value,
-  };
-}
-
-async function saveEvent() {
-  const calendarId = $("event-calendar").value;
-  if (!calendarId) throw new Error("没有可写的 Calendar");
-  const id = $("event-id").value;
-  if (!$("event-title").value.trim()) {
-    throw new Error("事件标题不能为空");
-  }
-  if (!$("event-start").value) {
-    throw new Error("事件开始时间不能为空");
-  }
-  if (
-    $("event-end").value &&
-    $("event-end").value < $("event-start").value
-  ) {
-    throw new Error("事件结束时间不能早于开始时间");
-  }
-
-  setStatus("正在通过 Thunderbird 保存 VEVENT…");
-  if (id) {
-    await browser.ThunderbirdCalDAV.updateEvent(
-      calendarId,
-      id,
-      eventValues()
-    );
-  } else {
-    await browser.ThunderbirdCalDAV.createEvent(calendarId, eventValues());
-  }
-  resetEventEditor();
-  await refreshEvents();
-  setStatus("Thunderbird 已提交事件修改；CalDAV 同步由 Thunderbird provider 负责。");
-}
-
-async function deleteEvent() {
-  const id = $("event-id").value;
-  const calendarId = $("event-calendar").value;
-  if (!id || !confirm("删除这个事件？")) return;
-  setStatus("正在通过 Thunderbird 删除 VEVENT…");
-  await browser.ThunderbirdCalDAV.deleteEvent(calendarId, id);
-  resetEventEditor();
-  await refreshEvents();
-  setStatus("事件已删除。");
-}
-
-function formatLocalDate(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-function defaultEventRange() {
-  const today = new Date();
-  const start = new Date(today);
-  start.setDate(start.getDate() - 7);
-  const end = new Date(today);
-  end.setDate(end.getDate() + 31);
-  $("event-range-start").value ||= formatLocalDate(start);
-  $("event-range-end").value ||= formatLocalDate(end);
-}
-
-function inclusiveEndAsExclusive(value) {
-  if (!value) return "";
-  const [year, month, day] = value.split("-").map(Number);
-  const end = new Date(year, month - 1, day);
-  end.setDate(end.getDate() + 1);
-  return formatLocalDate(end);
-}
-
-async function refreshTasks() {
-  state.tasks = await browser.ThunderbirdCalDAV.listTasks();
-  renderTasks();
-}
-
-async function refreshEvents() {
-  defaultEventRange();
-  state.events = await browser.ThunderbirdCalDAV.listEvents(
-    "",
-    $("event-range-start").value,
-    inclusiveEndAsExclusive($("event-range-end").value)
-  );
-  renderEvents();
-}
-
-async function refreshAll() {
-  setStatus("正在直接读取 Thunderbird Calendar/Tasks…");
-  state.calendars = await browser.ThunderbirdCalDAV.listCalendars();
-  populateCalendars();
-  await Promise.all([refreshTasks(), refreshEvents()]);
-  resetTaskEditor();
-  resetEventEditor();
-  setStatus(
-    `已读取 ${state.calendars.length} 个 Calendar、${state.tasks.length} 个任务、${state.events.length} 个事件。`
-  );
-}
-
-function guard(fn) {
-  return async event => {
-    event?.preventDefault?.();
-    try {
-      await fn();
-    } catch (error) {
-      console.error(error);
-      setStatus(error?.message || String(error), true);
+  let receipt;
+  try {
+    if (action === "start") {
+      receipt = await AssistantExecutor.start(task, state.workCalendarId);
+    } else if (action === "pause") {
+      receipt = await AssistantExecutor.pause(task);
+    } else if (action === "resume") {
+      receipt = await AssistantExecutor.resume(task, state.workCalendarId);
+    } else if (action === "complete") {
+      receipt = await AssistantExecutor.complete(task);
+    } else if (action === "cancel") {
+      receipt = await AssistantExecutor.cancel(task);
+    } else {
+      throw new Error("Unknown workflow action: " + action);
     }
-  };
+  } catch (error) {
+    setStatus(String(error?.message || error), "error");
+    await refreshAll(false);
+    return;
+  }
+
+  renderReceipt(receipt);
+  setStatus(
+    receipt.success
+      ? `${action} 已完成，并已执行写入后读回验证。`
+      : `${action} 未完整完成：${receipt.error || "请查看回执。"}`,
+    receipt.success ? "success" : "error"
+  );
+  await refreshAll(false);
 }
 
-for (const button of document.querySelectorAll(".tab")) {
-  button.addEventListener("click", () => {
-    document
-      .querySelectorAll(".tab")
-      .forEach(x => x.classList.toggle("active", x === button));
-    const selected = button.dataset.tab;
-    $("tasks-panel").hidden = selected !== "tasks";
-    $("events-panel").hidden = selected !== "events";
-  });
+async function refreshAll(showLoading = true) {
+  if (showLoading) setStatus("正在读取 Thunderbird Calendar…");
+  try {
+    state.calendars = await browser.ThunderbirdCalDAV.listCalendars();
+    state.tasks = await browser.ThunderbirdCalDAV.listTasks();
+    state.runtime = await AssistantStorage.getRuntime();
+    const settings = await AssistantStorage.getSettings();
+    state.workCalendarId = settings.workCalendarId || state.workCalendarId;
+
+    if (state.runtime.currentTask) {
+      const current = taskByRef(state.runtime.currentTask);
+      if (current) state.selected = current;
+    } else if (state.selected) {
+      state.selected = taskByRef(state.selected);
+    }
+
+    populateCalendars();
+    renderTasks();
+    renderFlow();
+    renderReceipt(await AssistantStorage.getLastReceipt());
+    setStatus(
+      `已读取 ${state.tasks.length} 个 Task；当前 Assistant 状态：${state.runtime.state}。`,
+      "success"
+    );
+  } catch (error) {
+    setStatus("读取失败：" + String(error?.message || error), "error");
+  }
 }
 
-$("refresh").addEventListener("click", guard(refreshAll));
-$("calendar-filter").addEventListener("change", () => {
-  renderTasks();
-  renderEvents();
-});
 $("task-search").addEventListener("input", renderTasks);
-$("task-new").addEventListener("click", resetTaskEditor);
-$("task-save").addEventListener("click", guard(saveTask));
-$("task-delete").addEventListener("click", guard(deleteTask));
-$("event-new").addEventListener("click", resetEventEditor);
-$("event-save").addEventListener("click", guard(saveEvent));
-$("event-delete").addEventListener("click", guard(deleteEvent));
-$("event-range-apply").addEventListener("click", guard(refreshEvents));
+$("calendar-filter").addEventListener("change", renderTasks);
+$("work-calendar").addEventListener("change", async event => {
+  state.workCalendarId = event.target.value;
+  await AssistantStorage.saveSettings({workCalendarId: state.workCalendarId});
+});
+$("refresh").addEventListener("click", () => refreshAll());
+$("cancel-confirm-no").addEventListener("click", () => {
+  $("cancel-confirm").hidden = true;
+});
+$("cancel-confirm-yes").addEventListener("click", async () => {
+  $("cancel-confirm").hidden = true;
+  await runWorkflow("cancel");
+});
 
 browser.ThunderbirdCalDAV.onItemsChanged.addListener(() => {
-  clearTimeout(globalThis.__thunderbirdCalDAVRefreshTimer);
-  globalThis.__thunderbirdCalDAVRefreshTimer = setTimeout(
-    () => refreshAll().catch(console.error),
-    250
-  );
+  clearTimeout(window.__caldavAssistantRefresh);
+  window.__caldavAssistantRefresh = setTimeout(() => refreshAll(false), 250);
 });
 
-defaultEventRange();
-refreshAll().catch(error => setStatus(error?.message || String(error), true));
+setInterval(updateElapsed, 1000);
+refreshAll();

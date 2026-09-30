@@ -44,6 +44,7 @@ manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 
 acceptance = r'''
 const __ACCEPTANCE_REPORT = "http://127.0.0.1:8765/report";
+let __acceptanceStage = "startup";
 
 function __acceptanceAssert(condition, message) {
   if (!condition) throw new Error(message);
@@ -77,30 +78,35 @@ async function __waitForAcceptanceCalendar() {
 }
 
 async function __runRealAcceptance() {
+  __acceptanceStage = "spaces-query";
   const spaces = await browser.spaces.query({
     isSelfOwned: true,
     name: "thunderbird_caldav_lab",
   });
   __acceptanceAssert(spaces.length === 1, "Thunderbird CalDAV Space was not created");
 
+  __acceptanceStage = "workspace-open";
   const workspaceTab = await browser.tabs.create({
     url: browser.runtime.getURL("workspace.html"),
   });
   __acceptanceAssert(Boolean(workspaceTab?.id), "Workspace tab could not be opened");
   await __acceptanceDelay(800);
 
+  __acceptanceStage = "wait-calendar-seed";
   const calendar = await __waitForAcceptanceCalendar();
   __acceptanceAssert(calendar.type === "caldav", "Configured calendar is not CalDAV");
   __acceptanceAssert(!calendar.readOnly, "Configured CalDAV calendar became read-only");
   __acceptanceAssert(calendar.supportsTasks, "CalDAV calendar does not support VTODO");
   __acceptanceAssert(calendar.supportsEvents, "CalDAV calendar does not support VEVENT");
 
+  __acceptanceStage = "list-seed-task";
   let tasks = await browser.ThunderbirdCalDAV.listTasks(calendar.id);
   __acceptanceAssert(
     tasks.some(task => task.id === "seed-task" && task.title === "Seed task from Radicale"),
     "Seed VTODO was not read through Thunderbird"
   );
 
+  __acceptanceStage = "create-task";
   const createdTask = await browser.ThunderbirdCalDAV.createTask(calendar.id, {
     title: "Runtime Task",
     due: "2026-10-05",
@@ -112,6 +118,7 @@ async function __runRealAcceptance() {
   __acceptanceAssert(createdTask.id, "Created task has no UID");
   __acceptanceAssert(createdTask.due?.icalString === "20261005", "Task due date was not preserved");
 
+  __acceptanceStage = "update-task";
   const updatedTask = await browser.ThunderbirdCalDAV.updateTask(calendar.id, createdTask.id, {
     title: "Runtime Task Updated",
     status: "IN-PROCESS",
@@ -124,6 +131,7 @@ async function __runRealAcceptance() {
   __acceptanceAssert(updatedTask.percentComplete === 40, "Task progress update failed");
   __acceptanceAssert(updatedTask.priority === 1, "Task priority update failed");
 
+  __acceptanceStage = "complete-task";
   const completedTask = await browser.ThunderbirdCalDAV.updateTask(calendar.id, createdTask.id, {
     status: "COMPLETED",
   });
@@ -136,6 +144,7 @@ async function __runRealAcceptance() {
     "Completed task was not re-read from Thunderbird"
   );
 
+  __acceptanceStage = "create-event";
   const event = await browser.ThunderbirdCalDAV.createEvent(calendar.id, {
     title: "Runtime Event",
     start: "2026-10-05T09:00",
@@ -145,6 +154,7 @@ async function __runRealAcceptance() {
   });
   __acceptanceAssert(event.id, "Created event has no UID");
 
+  __acceptanceStage = "list-event";
   let events = await browser.ThunderbirdCalDAV.listEvents(
     calendar.id,
     "2026-10-05",
@@ -155,6 +165,7 @@ async function __runRealAcceptance() {
     "Created VEVENT was not re-read from Thunderbird"
   );
 
+  __acceptanceStage = "update-event";
   const updatedEvent = await browser.ThunderbirdCalDAV.updateEvent(calendar.id, event.id, {
     title: "Runtime Event Updated",
     start: "2026-10-05T11:00",
@@ -168,6 +179,7 @@ async function __runRealAcceptance() {
     "Event start update failed"
   );
 
+  __acceptanceStage = "invalid-event-validation";
   let rejected = false;
   try {
     await browser.ThunderbirdCalDAV.updateEvent(calendar.id, event.id, {
@@ -179,6 +191,7 @@ async function __runRealAcceptance() {
   }
   __acceptanceAssert(rejected, "Invalid backwards event was not rejected");
 
+  __acceptanceStage = "delete-task-event";
   await browser.ThunderbirdCalDAV.deleteTask(calendar.id, createdTask.id);
   await browser.ThunderbirdCalDAV.deleteEvent(calendar.id, event.id);
 
@@ -218,6 +231,9 @@ setTimeout(() => {
       try {
         await __acceptanceReport({
           ok: false,
+          stage: __acceptanceStage,
+          name: error?.name || "",
+          message: error?.message || String(error),
           error: error?.stack || error?.message || String(error),
         });
       } catch (reportError) {
@@ -410,14 +426,19 @@ fi
 
 echo "== Real Thunderbird result =="
 cat "$TMP/report.json"
-python3 - "$TMP/report.json" <<'PY'
+if ! python3 - "$TMP/report.json" <<'PY'
 from pathlib import Path
 import json
 import sys
 
 data = json.loads(Path(sys.argv[1]).read_text())
 if not data.get("ok"):
-    raise SystemExit("Real Thunderbird acceptance failed:\n" + data.get("error", "unknown error"))
+    raise SystemExit(
+        "Real Thunderbird acceptance failed at "
+        + data.get("stage", "unknown")
+        + ": "
+        + data.get("error", data.get("message", "unknown error"))
+    )
 for key in (
     "thunderbirdCalDAV",
     "seedTaskRead",
@@ -431,6 +452,15 @@ for key in (
 assert data["calendar"]["type"] == "caldav", data
 print("real-thunderbird-caldav: PASS")
 PY
+then
+  echo "--- Thunderbird stdout ---"
+  cat "$TMP/thunderbird.stdout" || true
+  echo "--- Thunderbird stderr ---"
+  cat "$TMP/thunderbird.stderr" || true
+  echo "--- Radicale log ---"
+  cat "$TMP/radicale.log" || true
+  exit 1
+fi
 
 echo "== Verify server state after Thunderbird CRUD =="
 propfind="$(curl -fsS -u acceptance:test-password -X PROPFIND -H 'Depth: 1' http://127.0.0.1:5232/acceptance/test/)"

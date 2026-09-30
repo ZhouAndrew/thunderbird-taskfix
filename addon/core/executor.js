@@ -139,7 +139,18 @@
     if (!workCalendarId) {
       throw new Error("No writable Work calendar is configured.");
     }
-    const created = await browser.ThunderbirdCalDAV.createEvent(workCalendarId, {
+    const uidPart = globalThis.crypto?.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const workRef = {
+      id: `caldav-assistant-work-${uidPart}`,
+      calendarId: workCalendarId,
+    };
+
+    let created;
+    try {
+      created = await browser.ThunderbirdCalDAV.createEvent(workCalendarId, {
+      id: workRef.id,
       title: `Work · ${task.title || "(untitled task)"}`,
       start: startedAt,
       end: null,
@@ -150,37 +161,47 @@
       taskUid: task.id,
       workSession: true,
     });
-    step(receipt, "Work Session", "create VEVENT", true, {
-      uid: created.id,
-      calendarId: created.calendarId,
-      calendar: created.calendarName,
-      start: created.start?.icalString || null,
-      end: created.end?.icalString || null,
-      taskUid: created.taskUid,
-      workSession: created.workSession,
-    });
+      step(receipt, "Work Session", "create VEVENT", true, {
+        uid: created.id,
+        calendarId: created.calendarId,
+        calendar: created.calendarName,
+        start: created.start?.icalString || null,
+        end: created.end?.icalString || null,
+        taskUid: created.taskUid,
+        workSession: created.workSession,
+      });
 
-    const stored = await browser.ThunderbirdCalDAV.getEvent(
-      created.calendarId,
-      created.id
-    );
-    if (stored.taskUid !== task.id || !stored.workSession) {
-      throw new Error(
-        `Work VEVENT read-back lost relation: taskUid=${stored.taskUid || "(empty)"}, workSession=${String(stored.workSession)}`
+      const stored = await browser.ThunderbirdCalDAV.getEvent(
+        created.calendarId,
+        created.id
       );
-    }
-    if (stored.end) {
-      throw new Error(
-        `A new Work VEVENT must remain open; read-back DTEND=${stored.end?.icalString || "present"}`
+      if (stored.taskUid !== task.id || !stored.workSession) {
+        throw new Error(
+          `Work VEVENT read-back lost relation: taskUid=${stored.taskUid || "(empty)"}, workSession=${String(stored.workSession)}`
+        );
+      }
+      if (stored.end) {
+        throw new Error(
+          `A new Work VEVENT must remain open; read-back DTEND=${stored.end?.icalString || "present"}`
+        );
+      }
+      step(receipt, "Work Session", "read-back VEVENT", true, {
+        uid: stored.id,
+        open: !stored.end,
+        taskUid: stored.taskUid,
+        workSession: stored.workSession,
+      });
+      return stored;
+    } catch (error) {
+      await deleteWorkEvent(
+        {
+          id: created?.id || workRef.id,
+          calendarId: created?.calendarId || workRef.calendarId,
+        },
+        receipt
       );
+      throw error;
     }
-    step(receipt, "Work Session", "read-back VEVENT", true, {
-      uid: stored.id,
-      open: !stored.end,
-      taskUid: stored.taskUid,
-      workSession: stored.workSession,
-    });
-    return stored;
   }
 
   async function closeWorkEvent(workEvent, endedAt, receipt) {
@@ -230,25 +251,28 @@
 
   async function deleteWorkEvent(workEvent, receipt) {
     if (!workEvent?.id || !workEvent?.calendarId) return true;
+    let deleteError = null;
     try {
       await browser.ThunderbirdCalDAV.deleteEvent(workEvent.calendarId, workEvent.id);
-      let absent = false;
-      try {
-        await browser.ThunderbirdCalDAV.getEvent(workEvent.calendarId, workEvent.id);
-      } catch (_error) {
-        absent = true;
-      }
-      if (!absent) throw new Error("Deleted Work VEVENT is still readable.");
-      step(receipt, "Rollback", "delete created VEVENT", true, {
-        uid: workEvent.id,
-      });
-      return true;
     } catch (error) {
+      deleteError = error;
+    }
+
+    try {
+      await browser.ThunderbirdCalDAV.getEvent(workEvent.calendarId, workEvent.id);
       step(receipt, "Rollback", "delete created VEVENT", false, {
         uid: workEvent.id,
-        message: errorText(error),
+        message: deleteError
+          ? errorText(deleteError)
+          : "Deleted Work VEVENT is still readable.",
       });
       return false;
+    } catch (_notFound) {
+      step(receipt, "Rollback", "delete created VEVENT", true, {
+        uid: workEvent.id,
+        note: deleteError ? "VEVENT was already absent." : "Deletion verified by read-back absence.",
+      });
+      return true;
     }
   }
 
@@ -315,13 +339,13 @@
       let workEvent = null;
 
       try {
+        taskWritten = true;
         await updateAndVerifyTask(
           task,
           {status: "IN-PROCESS", paused: false},
           {status: "IN-PROCESS", paused: false},
           receipt
         );
-        taskWritten = true;
 
         workEvent = await createWorkEvent(task, workCalendarId, toLocalInput(), receipt);
 
@@ -366,16 +390,16 @@
       let taskWritten = false;
 
       try {
-        await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
         eventClosed = true;
+        await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
 
+        taskWritten = true;
         await updateAndVerifyTask(
           task,
           {status: "IN-PROCESS", paused: true},
           {status: "IN-PROCESS", paused: true},
           receipt
         );
-        taskWritten = true;
 
         const elapsed = runtime.segmentStartedAtMs
           ? Math.max(0, Date.now() - runtime.segmentStartedAtMs)
@@ -412,13 +436,13 @@
       let workEvent = null;
 
       try {
+        taskWritten = true;
         await updateAndVerifyTask(
           task,
           {status: "IN-PROCESS", paused: false},
           {status: "IN-PROCESS", paused: false},
           receipt
         );
-        taskWritten = true;
 
         workEvent = await createWorkEvent(task, workCalendarId, toLocalInput(), receipt);
 
@@ -459,8 +483,8 @@
 
       try {
         if (runtime.state === "working" && runtime.currentWorkEvent) {
-          await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
           eventClosed = true;
+          await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
         }
 
         const changes =

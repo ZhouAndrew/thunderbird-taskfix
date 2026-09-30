@@ -1,6 +1,6 @@
 # Thunderbird CalDAV Lab
 
-Current build: **0.3.3** for official Thunderbird 153.x.
+Current build: **0.3.4** for official Thunderbird 153.x.
 
 This project is a Thunderbird extension. It is **not** the separate Python/CLI CalDAV Assistant project.
 
@@ -28,6 +28,13 @@ Thunderbird CalDAV Lab XPI
 ```
 
 There is no Native Host, no Python process, no companion daemon, and no second CalDAV client in this add-on.
+
+## 0.3.4 supported-version contract
+
+- Supported Thunderbird range is **153.0.2 through 153.1.x**.
+- Thunderbird 153.3.1 was deliberately tested and rejected from the support range because its normal Tasks UI no longer accepts the retained TaskFix window-injection path, although the direct Calendar/CalDAV CRUD path itself works.
+- The add-on now fails closed at installation/update compatibility rather than claiming support for an unverified Thunderbird version.
+- Real CI covers 153.0.2esr, 153.1.0esr and 153.1.1esr in UTC and Asia/Shanghai, including restart of the same profile.
 
 ## 0.3.3 supported-version contract
 

@@ -15,6 +15,12 @@ var { CalTodo } = ChromeUtils.importESModule(
 var { CalEvent } = ChromeUtils.importESModule(
   "resource:///modules/CalEvent.sys.mjs"
 );
+var { CalTodo } = ChromeUtils.importESModule(
+  "resource:///modules/CalTodo.sys.mjs"
+);
+var { CalEvent } = ChromeUtils.importESModule(
+  "resource:///modules/CalEvent.sys.mjs"
+);
 
 const TASK_STATUSES = new Set([
   "",

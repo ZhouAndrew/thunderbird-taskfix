@@ -153,6 +153,24 @@ function __workspaceButton(label) {
   );
 }
 
+async function __workspaceWaitForReceipt(action, timeoutMs = 15000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const receipt = await AssistantStorage.getLastReceipt();
+    if (receipt?.action === action) return receipt;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error("Workspace timeout waiting for receipt: " + action);
+}
+
+function __workspaceAssertReceipt(receipt, action) {
+  __workspaceAssert(receipt?.action === action, "Wrong receipt action for " + action);
+  __workspaceAssert(
+    receipt?.success,
+    action + " failed: " + (receipt?.error || receipt?.summary || JSON.stringify(receipt))
+  );
+}
+
 async function __runWorkspaceAcceptance() {
   await __workspaceWaitFor(
     () =>
@@ -181,6 +199,8 @@ async function __runWorkspaceAcceptance() {
   $("work-calendar").dispatchEvent(new Event("change"));
 
   __workspaceButton("开始").click();
+  let receipt = await __workspaceWaitForReceipt("start");
+  __workspaceAssertReceipt(receipt, "start");
   await __workspaceWaitFor(
     () =>
       state.runtime?.state === "working" &&
@@ -188,14 +208,14 @@ async function __runWorkspaceAcceptance() {
       __workspaceButton("暂停"),
     "Start -> working"
   );
-  let receipt = await AssistantStorage.getLastReceipt();
-  __workspaceAssert(receipt?.success && receipt.action === "start", "Start receipt was not persisted");
   __workspaceAssert(
     receipt.steps.some(step => step.component === "Work Session" && step.operation === "read-back VEVENT"),
     "Start receipt does not show VEVENT read-back"
   );
 
   __workspaceButton("暂停").click();
+  receipt = await __workspaceWaitForReceipt("pause");
+  __workspaceAssertReceipt(receipt, "pause");
   await __workspaceWaitFor(
     () =>
       state.runtime?.state === "paused" &&
@@ -203,10 +223,10 @@ async function __runWorkspaceAcceptance() {
       __workspaceButton("继续"),
     "Pause -> paused"
   );
-  receipt = await AssistantStorage.getLastReceipt();
-  __workspaceAssert(receipt?.success && receipt.action === "pause", "Pause receipt was not persisted");
 
   __workspaceButton("继续").click();
+  receipt = await __workspaceWaitForReceipt("resume");
+  __workspaceAssertReceipt(receipt, "resume");
   await __workspaceWaitFor(
     () =>
       state.runtime?.state === "working" &&
@@ -214,18 +234,16 @@ async function __runWorkspaceAcceptance() {
       __workspaceButton("暂停"),
     "Resume -> working"
   );
-  receipt = await AssistantStorage.getLastReceipt();
-  __workspaceAssert(receipt?.success && receipt.action === "resume", "Resume receipt was not persisted");
 
   __workspaceButton("完成").click();
+  receipt = await __workspaceWaitForReceipt("complete");
+  __workspaceAssertReceipt(receipt, "complete");
   await __workspaceWaitFor(
     () =>
       state.runtime?.state === "idle" &&
       state.tasks.some(task => task.id === "seed-task" && task.status === "COMPLETED"),
     "Complete -> idle"
   );
-  receipt = await AssistantStorage.getLastReceipt();
-  __workspaceAssert(receipt?.success && receipt.action === "complete", "Complete receipt was not persisted");
   __workspaceAssert(
     receipt.steps.some(step => step.component === "WordPress" && step.operation === "not invoked"),
     "Complete receipt must explicitly state whether WordPress was invoked"
@@ -339,7 +357,7 @@ async function __runRealAcceptance() {
   __acceptanceStage = "workspace-ui";
   const workspaceResult = await Promise.race([
     __workspaceAcceptancePromise,
-    __acceptanceDelay(25000).then(() => {
+    __acceptanceDelay(60000).then(() => {
       throw new Error("Timed out waiting for workspace UI acceptance");
     }),
   ]);

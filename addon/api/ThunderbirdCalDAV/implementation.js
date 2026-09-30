@@ -392,6 +392,7 @@ async function listEventsApi(calendarId = "", start = "", end = "") {
 async function createTaskApi(calendarId, values) {
   const calendar = writableCalendarById(calendarId, "task");
   const task = cal.createTodo();
+  task.id = cal.getUUID();
   task.calendar = calendar;
   applyTaskChanges(task, values || {});
   const added = await calendar.addItem(task);
@@ -417,6 +418,7 @@ async function deleteTaskApi(calendarId, itemId) {
 async function createEventApi(calendarId, values) {
   const calendar = writableCalendarById(calendarId, "event");
   const event = cal.createEvent();
+  event.id = cal.getUUID();
   event.calendar = calendar;
   applyEventChanges(event, values || {});
   validateEvent(event);

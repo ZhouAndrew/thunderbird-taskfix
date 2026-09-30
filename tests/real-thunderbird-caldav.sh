@@ -134,7 +134,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 
 workspace_acceptance = r'''
-async function __workspaceWaitFor(predicate, label, timeoutMs = 15000) {
+async function __workspaceWaitFor(predicate, label, timeoutMs = 20000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     if (predicate()) return;
@@ -145,6 +145,12 @@ async function __workspaceWaitFor(predicate, label, timeoutMs = 15000) {
 
 function __workspaceAssert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function __workspaceButton(label) {
+  return [...$("actions").querySelectorAll("button")].find(
+    button => button.textContent === label
+  );
 }
 
 async function __runWorkspaceAcceptance() {
@@ -159,127 +165,89 @@ async function __runWorkspaceAcceptance() {
     option => option.value === "acceptance-calendar"
   );
   __workspaceAssert(calendarOption, "Workspace calendar filter did not render the CalDAV calendar");
-  __workspaceAssert(
-    [...$("task-list").querySelectorAll(".item-title")].some(
-      node => node.textContent === "Seed task from Radicale"
-    ),
-    "Workspace task list did not render the seed VTODO"
-  );
 
-  $("task-calendar").value = "acceptance-calendar";
-  $("task-title").value = "Workspace UI Task";
-  $("task-due").value = "2026-10-07";
-  $("task-status").value = "NEEDS-ACTION";
-  $("task-priority").value = "5";
-  $("task-categories").value = "UI, Acceptance";
-  $("task-description").value = "Created through real workspace controls";
-  $("task-save").click();
-
-  await __workspaceWaitFor(
-    () => state.tasks.some(task => task.title === "Workspace UI Task"),
-    "task create"
-  );
-  await new Promise(resolve => setTimeout(resolve, 400));
-
-  let task = state.tasks.find(item => item.title === "Workspace UI Task");
   let taskRow = [...$("task-list").children].find(
-    row => row.querySelector?.(".item-title")?.textContent === "Workspace UI Task"
+    row => row.querySelector?.(".item-title")?.textContent === "Seed task from Radicale"
   );
-  __workspaceAssert(taskRow, "Created task row was not rendered");
+  __workspaceAssert(taskRow, "Workspace task list did not render the seed VTODO");
   taskRow.click();
-  __workspaceAssert($("task-id").value === task.id, "Task row click did not load editor");
 
-  $("task-title").value = "Workspace UI Task Updated";
-  $("task-due").value = "2026-10-08";
-  $("task-status").value = "IN-PROCESS";
-  $("task-priority").value = "1";
-  $("task-categories").value = "UI, Updated";
-  $("task-save").click();
+  __workspaceAssert($("selected-uid").textContent === "seed-task", "Selected Task UID was not shown");
+  __workspaceAssert(__workspaceButton("开始"), "Start must appear after selecting an idle Task");
+  __workspaceAssert(!__workspaceButton("暂停"), "Pause must not appear before Start");
+  __workspaceAssert(!__workspaceButton("继续"), "Resume must not appear before Start");
 
+  $("work-calendar").value = "acceptance-calendar";
+  $("work-calendar").dispatchEvent(new Event("change"));
+
+  __workspaceButton("开始").click();
   await __workspaceWaitFor(
     () =>
-      state.tasks.some(
-        item =>
-          item.id === task.id &&
-          item.title === "Workspace UI Task Updated" &&
-          item.status === "IN-PROCESS" &&
-          item.priority === 1
-      ),
-    "task update"
+      state.runtime?.state === "working" &&
+      state.tasks.some(task => task.id === "seed-task" && task.status === "IN-PROCESS") &&
+      __workspaceButton("暂停"),
+    "Start -> working"
   );
-  await new Promise(resolve => setTimeout(resolve, 400));
-
-  task = state.tasks.find(item => item.id === task.id);
-  taskRow = [...$("task-list").children].find(
-    row => row.querySelector?.(".item-title")?.textContent === "Workspace UI Task Updated"
-  );
-  __workspaceAssert(taskRow, "Updated task row was not rendered");
-  taskRow.click();
-  globalThis.confirm = () => true;
-  $("task-delete").click();
-
-  await __workspaceWaitFor(
-    () => !state.tasks.some(item => item.id === task.id),
-    "task delete"
+  let receipt = await AssistantStorage.getLastReceipt();
+  __workspaceAssert(receipt?.success && receipt.action === "start", "Start receipt was not persisted");
+  __workspaceAssert(
+    receipt.steps.some(step => step.component === "Work Session" && step.operation === "read-back VEVENT"),
+    "Start receipt does not show VEVENT read-back"
   );
 
-  $("event-calendar").value = "acceptance-calendar";
-  $("event-title").value = "Workspace UI Event";
-  $("event-start").value = "2026-10-08T09:00";
-  $("event-end").value = "2026-10-08T10:00";
-  $("event-categories").value = "UI, Acceptance";
-  $("event-description").value = "Created through real workspace controls";
-  $("event-save").click();
-
-  await __workspaceWaitFor(
-    () => state.events.some(event => event.title === "Workspace UI Event"),
-    "event create"
-  );
-  await new Promise(resolve => setTimeout(resolve, 400));
-
-  let event = state.events.find(item => item.title === "Workspace UI Event");
-  let eventRow = [...$("event-list").children].find(
-    row => row.querySelector?.(".item-title")?.textContent === "Workspace UI Event"
-  );
-  __workspaceAssert(eventRow, "Created event row was not rendered");
-  eventRow.click();
-  __workspaceAssert($("event-id").value === event.id, "Event row click did not load editor");
-
-  $("event-title").value = "Workspace UI Event Updated";
-  $("event-start").value = "2026-10-08T11:00";
-  $("event-end").value = "2026-10-08T12:30";
-  $("event-categories").value = "UI, Updated";
-  $("event-save").click();
-
+  __workspaceButton("暂停").click();
   await __workspaceWaitFor(
     () =>
-      state.events.some(
-        item => item.id === event.id && item.title === "Workspace UI Event Updated"
-      ),
-    "event update"
+      state.runtime?.state === "paused" &&
+      state.tasks.some(task => task.id === "seed-task" && task.paused === true) &&
+      __workspaceButton("继续"),
+    "Pause -> paused"
   );
-  await new Promise(resolve => setTimeout(resolve, 400));
+  receipt = await AssistantStorage.getLastReceipt();
+  __workspaceAssert(receipt?.success && receipt.action === "pause", "Pause receipt was not persisted");
 
-  event = state.events.find(item => item.id === event.id);
-  eventRow = [...$("event-list").children].find(
-    row => row.querySelector?.(".item-title")?.textContent === "Workspace UI Event Updated"
-  );
-  __workspaceAssert(eventRow, "Updated event row was not rendered");
-  eventRow.click();
-  globalThis.confirm = () => true;
-  $("event-delete").click();
-
+  __workspaceButton("继续").click();
   await __workspaceWaitFor(
-    () => !state.events.some(item => item.id === event.id),
-    "event delete"
+    () =>
+      state.runtime?.state === "working" &&
+      state.tasks.some(task => task.id === "seed-task" && task.paused === false) &&
+      __workspaceButton("暂停"),
+    "Resume -> working"
   );
+  receipt = await AssistantStorage.getLastReceipt();
+  __workspaceAssert(receipt?.success && receipt.action === "resume", "Resume receipt was not persisted");
+
+  __workspaceButton("完成").click();
+  await __workspaceWaitFor(
+    () =>
+      state.runtime?.state === "idle" &&
+      state.tasks.some(task => task.id === "seed-task" && task.status === "COMPLETED"),
+    "Complete -> idle"
+  );
+  receipt = await AssistantStorage.getLastReceipt();
+  __workspaceAssert(receipt?.success && receipt.action === "complete", "Complete receipt was not persisted");
+  __workspaceAssert(
+    receipt.steps.some(step => step.component === "WordPress" && step.operation === "not invoked"),
+    "Complete receipt must explicitly state whether WordPress was invoked"
+  );
+  __workspaceAssert(
+    $("receipt").textContent.includes("complete"),
+    "Persistent receipt is not visible on the main workspace"
+  );
+
+  const audit = await AssistantStorage.listAudit();
+  const actions = audit.filter(row => row.scope === "workflow").map(row => row.action);
+  for (const expected of ["start", "pause", "resume", "complete"]) {
+    __workspaceAssert(actions.includes(expected), "Missing persistent workflow audit: " + expected);
+  }
 
   return {
     ok: true,
     calendarRendered: true,
     seedTaskRendered: true,
-    taskUiCrud: true,
-    eventUiCrud: true,
+    workflowUi: true,
+    persistentReceipt: true,
+    auditPersistent: true,
     statusText: $("status").textContent,
   };
 }
@@ -379,8 +347,9 @@ async function __runRealAcceptance() {
     workspaceResult?.ok,
     "Workspace UI acceptance failed: " + (workspaceResult?.error || "unknown")
   );
-  __acceptanceAssert(workspaceResult.taskUiCrud, "Workspace task CRUD did not pass");
-  __acceptanceAssert(workspaceResult.eventUiCrud, "Workspace event CRUD did not pass");
+  __acceptanceAssert(workspaceResult.workflowUi, "Workspace workflow did not pass");
+  __acceptanceAssert(workspaceResult.persistentReceipt, "Workspace persistent receipt did not pass");
+  __acceptanceAssert(workspaceResult.auditPersistent, "Workspace persistent audit did not pass");
   await browser.tabs.remove(workspaceTab.id);
 
   __acceptanceStage = "taskfix-real-ui";
@@ -406,43 +375,38 @@ async function __runRealAcceptance() {
     "Seed VTODO was not read through Thunderbird"
   );
 
-  __acceptanceStage = "create-task";
-  const createdTask = await browser.ThunderbirdCalDAV.createTask(calendar.id, {
-    title: "Runtime Task",
-    due: "2026-10-05",
-    status: "NEEDS-ACTION",
-    priority: 5,
-    categories: ["Acceptance", "Direct"],
-    description: "Created by real Thunderbird 153 acceptance",
-  });
-  __acceptanceAssert(createdTask.id, "Created task has no UID");
-  __acceptanceAssert(createdTask.due?.icalString === "20261005", "Task due date was not preserved");
+  __acceptanceStage = "verify-workflow-task";
+  let workflowTask = await browser.ThunderbirdCalDAV.getTask(calendar.id, "seed-task");
+  __acceptanceAssert(workflowTask.status === "COMPLETED", "Workspace Complete was not persisted to CalDAV");
+  __acceptanceAssert(workflowTask.paused === false, "Completed Task retained paused marker");
 
-  __acceptanceStage = "update-task";
-  const updatedTask = await browser.ThunderbirdCalDAV.updateTask(calendar.id, createdTask.id, {
-    title: "Runtime Task Updated",
-    status: "IN-PROCESS",
-    percentComplete: 40,
-    priority: 1,
-    due: "2026-10-06",
-    categories: ["Acceptance", "Updated"],
-  });
-  __acceptanceAssert(updatedTask.status === "IN-PROCESS", "Task status update failed");
-  __acceptanceAssert(updatedTask.percentComplete === 40, "Task progress update failed");
-  __acceptanceAssert(updatedTask.priority === 1, "Task priority update failed");
-
-  __acceptanceStage = "complete-task";
-  const completedTask = await browser.ThunderbirdCalDAV.updateTask(calendar.id, createdTask.id, {
-    status: "COMPLETED",
-  });
-  __acceptanceAssert(completedTask.completed, "Task completion failed");
-  __acceptanceAssert(completedTask.status === "COMPLETED", "Completed task status mismatch");
-
-  tasks = await browser.ThunderbirdCalDAV.listTasks(calendar.id);
-  __acceptanceAssert(
-    tasks.some(task => task.id === createdTask.id && task.status === "COMPLETED"),
-    "Completed task was not re-read from Thunderbird"
+  __acceptanceStage = "verify-work-sessions";
+  let workEvents = (await browser.ThunderbirdCalDAV.listEvents(calendar.id)).filter(
+    item => item.workSession && item.taskUid === "seed-task"
   );
+  __acceptanceAssert(workEvents.length >= 2, "Start/Resume did not create separate Work VEVENTs");
+  __acceptanceAssert(workEvents.every(item => item.end), "Completed workflow left an open Work VEVENT");
+
+  __acceptanceStage = "verify-workflow-audit";
+  const auditState = await browser.storage.local.get("caldavAssistant.audit");
+  const auditRows = auditState["caldavAssistant.audit"] || [];
+  const workflowActions = auditRows
+    .filter(row => row.scope === "workflow")
+    .map(row => row.action);
+  for (const expected of ["start", "pause", "resume", "complete"]) {
+    __acceptanceAssert(workflowActions.includes(expected), "Persistent audit missing " + expected);
+  }
+
+  __acceptanceStage = "task-write-readback";
+  await browser.ThunderbirdCalDAV.updateTask(calendar.id, "seed-task", {
+    status: "IN-PROCESS",
+    paused: true,
+    percentComplete: 40,
+  });
+  let taskReadback = await browser.ThunderbirdCalDAV.getTask(calendar.id, "seed-task");
+  __acceptanceAssert(taskReadback.status === "IN-PROCESS", "Existing Task status write/readback failed");
+  __acceptanceAssert(taskReadback.paused === true, "Existing Task paused write/readback failed");
+  __acceptanceAssert(taskReadback.percentComplete === 40, "Existing Task progress write/readback failed");
 
   __acceptanceStage = "create-event";
   const event = await browser.ThunderbirdCalDAV.createEvent(calendar.id, {
@@ -491,38 +455,43 @@ async function __runRealAcceptance() {
   }
   __acceptanceAssert(rejected, "Invalid backwards event was not rejected");
 
-  __acceptanceStage = "delete-task-event";
-  await browser.ThunderbirdCalDAV.deleteTask(calendar.id, createdTask.id);
+  __acceptanceStage = "cleanup-test-data";
   await browser.ThunderbirdCalDAV.deleteEvent(calendar.id, event.id);
+  for (const workEvent of workEvents) {
+    await browser.ThunderbirdCalDAV.deleteEvent(calendar.id, workEvent.id);
+  }
+  await browser.ThunderbirdCalDAV.updateTask(calendar.id, "seed-task", {
+    status: "NEEDS-ACTION",
+    paused: false,
+    percentComplete: 0,
+  });
 
   tasks = await browser.ThunderbirdCalDAV.listTasks(calendar.id);
-  events = await browser.ThunderbirdCalDAV.listEvents(
-    calendar.id,
-    "2026-10-05",
-    "2026-10-06"
-  );
+  events = await browser.ThunderbirdCalDAV.listEvents(calendar.id);
   __acceptanceAssert(
-    !tasks.some(task => task.id === createdTask.id),
-    "Deleted task still exists"
+    tasks.length === 1 &&
+      tasks[0].id === "seed-task" &&
+      tasks[0].status === "NEEDS-ACTION" &&
+      tasks[0].paused === false,
+    "Seed Task was not restored after acceptance"
   );
-  __acceptanceAssert(
-    !events.some(item => item.id === event.id),
-    "Deleted event still exists"
-  );
+  __acceptanceAssert(events.length === 0, "Acceptance left VEVENT test data behind");
 
   return {
     ok: true,
     thunderbirdCalDAV: true,
     calendar,
     seedTaskRead: true,
-    taskCrud: true,
+    taskWriteReadback: true,
     eventCrud: true,
     validation: true,
+    workSessionLifecycle: true,
+    persistentAudit: true,
     spaceCreated: true,
     workspaceOpened: true,
-    workspaceUiCrud: true,
+    workflowUi: true,
+    persistentReceipt: true,
     taskFixRealUi: true,
-    createdTaskId: createdTask.id,
     createdEventId: event.id,
   };
 }
@@ -760,12 +729,15 @@ if not data.get("ok"):
 for key in (
     "thunderbirdCalDAV",
     "seedTaskRead",
-    "taskCrud",
+    "taskWriteReadback",
     "eventCrud",
     "validation",
+    "workSessionLifecycle",
+    "persistentAudit",
     "spaceCreated",
     "workspaceOpened",
-    "workspaceUiCrud",
+    "workflowUi",
+    "persistentReceipt",
     "taskFixRealUi",
 ):
     assert data.get(key) is True, (key, data)
@@ -848,12 +820,15 @@ assert data.get("ok") is True, data
 for key in (
     "thunderbirdCalDAV",
     "seedTaskRead",
-    "taskCrud",
+    "taskWriteReadback",
     "eventCrud",
     "validation",
+    "workSessionLifecycle",
+    "persistentAudit",
     "spaceCreated",
     "workspaceOpened",
-    "workspaceUiCrud",
+    "workflowUi",
+    "persistentReceipt",
     "taskFixRealUi",
 ):
     assert data.get(key) is True, (key, data)

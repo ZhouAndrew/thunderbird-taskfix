@@ -131,6 +131,20 @@
   }
 
   function taskUiIsActive() {
+    try {
+      if (win.calendarController?.isInMode?.("task")) {
+        return true;
+      }
+    } catch {}
+
+    try {
+      const tabmail = document.getElementById("tabmail");
+      const tasksMode = tabmail?.tabModes?.tasks;
+      if (tasksMode?.tabs?.includes?.(tabmail.selectedTab)) {
+        return true;
+      }
+    } catch {}
+
     const trees = [
       document.getElementById("calendar-task-tree"),
       document.getElementById("unifinder-todo-tree"),

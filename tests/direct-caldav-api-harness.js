@@ -62,7 +62,6 @@ class Item {
     this.title = "";
     this.priority = 0;
     this.percentComplete = 0;
-    this.isCompleted = false;
     this.completedDate = null;
     this.dueDate = null;
     this.entryDate = null;
@@ -81,6 +80,23 @@ class Item {
     if (value) this._properties.set("STATUS", String(value));
     else this._properties.delete("STATUS");
   }
+  get isCompleted() {
+    return this.completedDate !== null ||
+      this.percentComplete === 100 ||
+      this.status === "COMPLETED";
+  }
+  set isCompleted(value) {
+    if (value) {
+      this.status = "COMPLETED";
+      this.percentComplete = 100;
+      this.completedDate ||= new DateTime("20260930T120000Z");
+    } else {
+      this._properties.delete("COMPLETED");
+      this._properties.delete("STATUS");
+      this.percentComplete = 0;
+      this.completedDate = null;
+    }
+  }
   getProperty(name) { return this._properties.get(name) ?? null; }
   setProperty(name, value) { this._properties.set(name, value); }
   deleteProperty(name) { this._properties.delete(name); }
@@ -89,7 +105,7 @@ class Item {
   clone() {
     const copy = new Item(this.kind);
     for (const key of [
-      "id", "calendar", "title", "priority", "percentComplete", "isCompleted",
+      "id", "calendar", "title", "priority", "percentComplete",
       "completedDate", "dueDate", "entryDate", "startDate", "endDate",
       "recurrenceId"
     ]) {

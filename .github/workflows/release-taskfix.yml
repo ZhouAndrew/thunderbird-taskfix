@@ -65,8 +65,8 @@ jobs:
       - name: Build XPI
         run: |
           chmod +x packaging/build-xpi.sh
-          packaging/build-xpi.sh "dist/thunderbird-taskfix-${{ steps.release.outputs.version }}.xpi"
-          python3 tests/check-xpi.py "dist/thunderbird-taskfix-${{ steps.release.outputs.version }}.xpi"
+          packaging/build-xpi.sh "$GITHUB_WORKSPACE/dist/thunderbird-taskfix-${{ steps.release.outputs.version }}.xpi"
+          python3 tests/check-xpi.py "$GITHUB_WORKSPACE/dist/thunderbird-taskfix-${{ steps.release.outputs.version }}.xpi"
 
       - name: Publish GitHub release
         env:
@@ -84,7 +84,7 @@ jobs:
 
           args=(
             release create "$TAG"
-            "dist/thunderbird-taskfix-$VERSION.xpi"
+            "$GITHUB_WORKSPACE/dist/thunderbird-taskfix-$VERSION.xpi"
             --target "${{ steps.release.outputs.target }}"
             --title "Thunderbird TaskFix $TAG"
             --generate-notes

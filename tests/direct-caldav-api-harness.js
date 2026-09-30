@@ -224,6 +224,16 @@ global.ChromeUtils = {
     if (url.includes("calUtils")) {
       return {cal};
     }
+    if (url.includes("CalTodo")) {
+      return {CalTodo: class CalTodo extends Item {
+        constructor() { super("task"); }
+      }};
+    }
+    if (url.includes("CalEvent")) {
+      return {CalEvent: class CalEvent extends Item {
+        constructor() { super("event"); }
+      }};
+    }
     throw new Error("Unexpected module: " + url);
   },
   generateQI() { return () => {}; },

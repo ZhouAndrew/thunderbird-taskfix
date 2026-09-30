@@ -492,8 +492,8 @@
             ? {status: "COMPLETED", paused: false, percentComplete: 100}
             : {status: "CANCELLED", paused: false};
 
-        await updateAndVerifyTask(task, changes, {status, paused: false}, receipt);
         taskWritten = true;
+        await updateAndVerifyTask(task, changes, {status, paused: false}, receipt);
 
         await AssistantStorage.clearRuntime();
         step(receipt, "Runtime", "clear current task", true, {state: "idle"});

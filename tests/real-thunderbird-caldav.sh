@@ -40,7 +40,117 @@ permissions = manifest.setdefault("permissions", [])
 host = "http://127.0.0.1/*"
 if host not in permissions:
     permissions.append(host)
+manifest["experiment_apis"]["AcceptanceSetup"] = {
+    "schema": "api/AcceptanceSetup/schema.json",
+    "parent": {
+        "scopes": ["addon_parent"],
+        "paths": [["AcceptanceSetup"]],
+        "script": "api/AcceptanceSetup/implementation.js",
+    },
+}
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+
+setup_dir = root / "api" / "AcceptanceSetup"
+setup_dir.mkdir(parents=True, exist_ok=True)
+(setup_dir / "schema.json").write_text(r'''[
+  {
+    "namespace": "AcceptanceSetup",
+    "functions": [
+      {
+        "name": "configure",
+        "type": "function",
+        "async": true,
+        "parameters": [],
+        "returns": {"type": "any"}
+      }
+    ]
+  }
+]
+''')
+
+(setup_dir / "implementation.js").write_text(r'''"use strict";
+
+var { ExtensionCommon } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionCommon.sys.mjs"
+);
+var { cal } = ChromeUtils.importESModule(
+  "resource:///modules/calendar/calUtils.sys.mjs"
+);
+
+const ORIGIN = "http://127.0.0.1:5232";
+const REALM = "acceptance-realm";
+const USERNAME = "acceptance";
+const PASSWORD = "test-password";
+const CALENDAR_ID = "acceptance-calendar";
+const CALENDAR_URL = ORIGIN + "/acceptance/test/";
+
+async function ensureLogin() {
+  const existing = await Services.logins.searchLoginsAsync({
+    origin: ORIGIN,
+    httpRealm: REALM,
+  });
+  if (existing.some(login => login.username === USERNAME)) {
+    return;
+  }
+
+  const loginInfo = Cc["@mozilla.org/login-manager/loginInfo;1"]
+    .createInstance(Ci.nsILoginInfo);
+  loginInfo.init(
+    ORIGIN,
+    null,
+    REALM,
+    USERNAME,
+    PASSWORD,
+    "",
+    ""
+  );
+  await Services.logins.addLoginAsync(loginInfo);
+}
+
+function ensureCalendar() {
+  let calendar = cal.manager.getCalendarById(CALENDAR_ID);
+  if (calendar) {
+    return calendar;
+  }
+
+  calendar = cal.manager.createCalendar(
+    "caldav",
+    Services.io.newURI(CALENDAR_URL)
+  );
+  if (!calendar) {
+    throw new Error("Failed to create Thunderbird CalDAV provider");
+  }
+  calendar.name = "Acceptance";
+  calendar.id = CALENDAR_ID;
+  calendar.setProperty("cache.enabled", true);
+  calendar.setProperty("username", USERNAME);
+  calendar.setProperty("calendar-main-default", true);
+  calendar.setProperty("calendar-main-in-composite", true);
+  cal.manager.registerCalendar(calendar);
+  return cal.manager.getCalendarById(CALENDAR_ID);
+}
+
+this.AcceptanceSetup = class extends ExtensionCommon.ExtensionAPI {
+  getAPI() {
+    return {
+      AcceptanceSetup: {
+        async configure() {
+          await ensureLogin();
+          const calendar = ensureCalendar();
+          if (calendar?.canRefresh) {
+            calendar.refresh();
+          }
+          return {
+            id: String(calendar?.id || ""),
+            type: String(calendar?.type || ""),
+            name: String(calendar?.name || ""),
+          };
+        },
+      },
+    };
+  }
+};
+''')
 
 acceptance = r'''
 const __ACCEPTANCE_REPORT = "http://127.0.0.1:8765/report";
@@ -77,6 +187,22 @@ async function __waitForAcceptanceCalendar() {
 }
 
 async function __runRealAcceptance() {
+  const setup = await browser.AcceptanceSetup.configure();
+  __acceptanceAssert(setup.id === "acceptance-calendar", "Acceptance calendar setup failed");
+  __acceptanceAssert(setup.type === "caldav", "Acceptance calendar provider is not CalDAV");
+
+  const spaces = await browser.spaces.query({
+    isSelfOwned: true,
+    name: "thunderbird_caldav_lab",
+  });
+  __acceptanceAssert(spaces.length === 1, "Thunderbird CalDAV Space was not created");
+
+  const workspaceTab = await browser.tabs.create({
+    url: browser.runtime.getURL("workspace.html"),
+  });
+  __acceptanceAssert(Boolean(workspaceTab?.id), "Workspace tab could not be opened");
+  await __acceptanceDelay(800);
+
   const calendar = await __waitForAcceptanceCalendar();
   __acceptanceAssert(calendar.type === "caldav", "Configured calendar is not CalDAV");
   __acceptanceAssert(!calendar.readOnly, "Configured CalDAV calendar became read-only");
@@ -193,6 +319,8 @@ async function __runRealAcceptance() {
     taskCrud: true,
     eventCrud: true,
     validation: true,
+    spaceCreated: true,
+    workspaceOpened: true,
   };
 }
 
@@ -222,10 +350,13 @@ PY
 )
 
 echo "== Start Radicale =="
+cat >"$TMP/users" <<'EOF'
+acceptance:test-password
+EOF
 cat >"$TMP/rights" <<'EOF'
-[all]
-user: .*
-collection: .*
+[acceptance]
+user: ^acceptance$
+collection: ^acceptance(/.*)?$
 permissions: RrWw
 EOF
 cat >"$TMP/radicale.conf" <<EOF
@@ -233,7 +364,11 @@ cat >"$TMP/radicale.conf" <<EOF
 hosts = 127.0.0.1:5232
 
 [auth]
-type = none
+type = htpasswd
+htpasswd_filename = $TMP/users
+htpasswd_encryption = plain
+realm = acceptance-realm
+delay = 0
 
 [rights]
 type = from_file
@@ -249,12 +384,12 @@ python3 -m radicale --config "$TMP/radicale.conf" >"$TMP/radicale.log" 2>&1 &
 RADICALE_PID=$!
 
 for _ in $(seq 1 80); do
-  if curl -fsS http://127.0.0.1:5232/ >/dev/null 2>&1; then
+  if curl -fsS -u acceptance:test-password http://127.0.0.1:5232/ >/dev/null 2>&1; then
     break
   fi
   sleep 0.1
 done
-curl -fsS http://127.0.0.1:5232/ >/dev/null
+curl -fsS -u acceptance:test-password http://127.0.0.1:5232/ >/dev/null
 
 echo "== Create real CalDAV collection and seed VTODO =="
 cat >"$TMP/mkcalendar.xml" <<'EOF'
@@ -271,7 +406,7 @@ cat >"$TMP/mkcalendar.xml" <<'EOF'
   </D:set>
 </C:mkcalendar>
 EOF
-status="$(curl -sS -o "$TMP/mkcalendar.out" -w '%{http_code}'   -X MKCALENDAR   -H 'Content-Type: application/xml; charset=utf-8'   --data-binary @"$TMP/mkcalendar.xml"   http://127.0.0.1:5232/test/)"
+status="$(curl -sS -o "$TMP/mkcalendar.out" -w '%{http_code}'   -X MKCALENDAR   -H 'Content-Type: application/xml; charset=utf-8'   --data-binary @"$TMP/mkcalendar.xml"   -u acceptance:test-password   http://127.0.0.1:5232/acceptance/test/)"
 if [[ "$status" != "201" && "$status" != "200" ]]; then
   echo "MKCALENDAR failed: HTTP $status"
   cat "$TMP/mkcalendar.out"
@@ -292,7 +427,7 @@ DUE:20261005T100000Z
 END:VTODO
 END:VCALENDAR
 EOF
-curl -fsS -X PUT   -H 'Content-Type: text/calendar; charset=utf-8'   --data-binary @"$TMP/seed.ics"   http://127.0.0.1:5232/test/seed-task.ics >/dev/null
+curl -fsS -X PUT   -H 'Content-Type: text/calendar; charset=utf-8'   --data-binary @"$TMP/seed.ics"   -u acceptance:test-password   http://127.0.0.1:5232/acceptance/test/seed-task.ics >/dev/null
 
 echo "== Start acceptance report endpoint =="
 cat >"$TMP/report_server.py" <<'PY'
@@ -347,13 +482,6 @@ user_pref("mailnews.start_page.url", "about:blank");
 user_pref("calendar.item.promptDelete", false);
 user_pref("calendar.timezone.local", "UTC");
 user_pref("calendar.timezone.useSystemTimezone", false);
-user_pref("calendar.registry.acceptance-calendar.calendar-main-default", true);
-user_pref("calendar.registry.acceptance-calendar.calendar-main-in-composite", true);
-user_pref("calendar.registry.acceptance-calendar.cache.enabled", true);
-user_pref("calendar.registry.acceptance-calendar.name", "Acceptance");
-user_pref("calendar.registry.acceptance-calendar.type", "caldav");
-user_pref("calendar.registry.acceptance-calendar.uri", "http://127.0.0.1:5232/test/");
-user_pref("calendar.list.sortOrder", "acceptance-calendar");
 EOF
 
 echo "== Launch real Thunderbird $TB_VERSION with the XPI =="
@@ -396,14 +524,22 @@ import sys
 data = json.loads(Path(sys.argv[1]).read_text())
 if not data.get("ok"):
     raise SystemExit("Real Thunderbird acceptance failed:\n" + data.get("error", "unknown error"))
-for key in ("thunderbirdCalDAV", "seedTaskRead", "taskCrud", "eventCrud", "validation"):
+for key in (
+    "thunderbirdCalDAV",
+    "seedTaskRead",
+    "taskCrud",
+    "eventCrud",
+    "validation",
+    "spaceCreated",
+    "workspaceOpened",
+):
     assert data.get(key) is True, (key, data)
 assert data["calendar"]["type"] == "caldav", data
 print("real-thunderbird-caldav: PASS")
 PY
 
 echo "== Verify server state after Thunderbird CRUD =="
-propfind="$(curl -fsS -X PROPFIND -H 'Depth: 1' http://127.0.0.1:5232/test/)"
+propfind="$(curl -fsS -u acceptance:test-password -X PROPFIND -H 'Depth: 1' http://127.0.0.1:5232/acceptance/test/)"
 grep -Fq 'seed-task.ics' <<<"$propfind"
 if grep -Fq 'Runtime Task' <<<"$propfind" || grep -Fq 'Runtime Event' <<<"$propfind"; then
   echo "Unexpected runtime acceptance item remained on the CalDAV server."

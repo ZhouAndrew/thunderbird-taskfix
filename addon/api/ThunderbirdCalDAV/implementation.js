@@ -499,7 +499,7 @@ async function deleteTaskApi(calendarId, itemId) {
 async function createEventApi(calendarId, values) {
   const calendar = writableCalendarById(calendarId, "event");
   const event = new CalEvent();
-  event.id = cal.getUUID();
+  event.id = values?.id ? String(values.id) : cal.getUUID();
   event.calendar = calendar;
   applyEventChanges(event, values || {});
   validateEvent(event);

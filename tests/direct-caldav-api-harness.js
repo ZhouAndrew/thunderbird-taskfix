@@ -91,14 +91,15 @@ class Item {
     for (const key of [
       "id", "calendar", "title", "priority", "percentComplete", "isCompleted",
       "completedDate", "dueDate", "entryDate", "startDate", "endDate",
-      "recurrenceId", "recurrenceInfo", "parentItem"
+      "recurrenceId"
     ]) {
       const value = this[key];
       copy[key] = value?.clone ? value.clone() : value;
     }
+    copy.recurrenceInfo = this.recurrenceInfo;
     copy._properties = new Map(this._properties);
     copy._categories = [...this._categories];
-    if (this.parentItem === this) copy.parentItem = copy;
+    copy.parentItem = this.parentItem === this ? copy : this.parentItem;
     return copy;
   }
 }

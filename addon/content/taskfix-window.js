@@ -1,10 +1,51 @@
 /* Thunderbird TaskFix 0.2.1 — standalone Thunderbird enhancement */
 (() => {
   const win = globalThis;
-  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V2_1";
-  if (win.__taskfixAddonState?.marker === MARKER) return;
+  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V3_4";
+  if (
+    win.__taskfixAddonState?.marker === MARKER &&
+    win.__taskfixAddonState?.installed
+  ) {
+    return;
+  }
+
+  function appendLabLog(event, details = {}) {
+    if (typeof Cc === "undefined" || typeof Ci === "undefined") return;
+    try {
+      const directoryService = Cc["@mozilla.org/file/directory_service;1"]
+        .getService(Ci.nsIProperties);
+      const file = directoryService.get("ProfD", Ci.nsIFile);
+      file.append("thunderbird-caldav-lab.log");
+
+      if (file.exists() && file.fileSize > 1024 * 1024) {
+        const backup = directoryService.get("ProfD", Ci.nsIFile);
+        backup.append("thunderbird-caldav-lab.log.1");
+        if (backup.exists()) backup.remove(false);
+        file.moveTo(null, "thunderbird-caldav-lab.log.1");
+      }
+
+      const stream = Cc["@mozilla.org/network/file-output-stream;1"]
+        .createInstance(Ci.nsIFileOutputStream);
+      stream.init(file, 0x02 | 0x08 | 0x10, 0o600, 0);
+      const converter = Cc["@mozilla.org/intl/converter-output-stream;1"]
+        .createInstance(Ci.nsIConverterOutputStream);
+      converter.init(stream, "UTF-8");
+      converter.writeString(
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          component: "taskfix-window",
+          event,
+          details,
+        }) + "\n"
+      );
+      converter.close();
+    } catch (error) {
+      console.warn("[TaskFix] Could not write diagnostics", error);
+    }
+  }
 
   try { win.__taskfixAddonCleanup?.(); } catch (e) {
+    appendLabLog("previous-cleanup-failed", {message: String(e?.message || e)});
     console.warn("[TaskFix] Previous cleanup failed", e);
   }
 
@@ -242,10 +283,11 @@
 
   function addToolbarStatusMenu() {
     let button = document.getElementById("task-actions-status");
-    if (button) return;
+    if (button) return true;
 
+    const toolbar = document.getElementById("task-actions-toolbar");
+    if (!toolbar) return false;
     const completed = document.getElementById("task-actions-markcompleted");
-    if (!completed?.parentNode) throw new Error("Task toolbar insertion point not found");
 
     button = document.createXULElement("toolbarbutton");
     button.id = "task-actions-status";
@@ -261,12 +303,22 @@
     popup.id = "task-actions-status-popup";
     fillStatusPopup(popup, "taskfix-toolbar-status");
     button.appendChild(popup);
-    completed.parentNode.insertBefore(button, completed);
+    if (completed?.parentNode) {
+      completed.parentNode.insertBefore(button, completed);
+    } else {
+      toolbar.appendChild(button);
+      appendLabLog("toolbar-fallback-insertion", {
+        thunderbird: typeof navigator !== "undefined" ? navigator.userAgent : "",
+        reason: "task-actions-markcompleted missing",
+      });
+    }
+    return true;
   }
 
   function addContextStatusMenu() {
     const context = document.getElementById("taskitem-context-menu");
-    if (!context || document.getElementById("task-context-menu-status")) return;
+    if (document.getElementById("task-context-menu-status")) return true;
+    if (!context) return false;
 
     const menu = document.createXULElement("menu");
     menu.id = "task-context-menu-status";
@@ -281,6 +333,14 @@
 
     const progress = document.getElementById("task-context-menu-progress");
     context.insertBefore(menu, progress ?? document.getElementById("task-context-menu-priority"));
+    return true;
+  }
+
+  function ensureTaskFixControls() {
+    return {
+      toolbar: addToolbarStatusMenu(),
+      context: addContextStatusMenu(),
+    };
   }
 
   function installContextSelectionTracking() {
@@ -427,11 +487,19 @@
     taskDetailsView.taskfixCategoryCommand = categoryCommand;
 
     installContextSelectionTracking();
-    addToolbarStatusMenu();
-    addContextStatusMenu();
+    const controls = ensureTaskFixControls();
 
     state.installed = true;
-    console.info("[TaskFix] 0.2.1 installed");
+    appendLabLog("installed", {
+      toolbar: controls.toolbar,
+      context: controls.context,
+      toolbarPresent: Boolean(document.getElementById("task-actions-toolbar")),
+      taskTreePresent: Boolean(
+        document.getElementById("calendar-task-tree") ||
+        document.getElementById("unifinder-todo-tree")
+      ),
+    });
+    console.info("[TaskFix] 0.3.4 installed");
     return true;
   }
 
@@ -466,33 +534,61 @@
     delete win.__taskfixAddonCleanup;
   };
 
-  if (!install()) {
-    // The Tasks panel can be created long after the main Thunderbird window.
-    // Keep a DOM observer so installing the add-on before opening Tasks does not
-    // lose the Status/Category/Progress/Priority integration after 15 seconds.
-    if (typeof MutationObserver === "function") {
-      state.readyObserver = new MutationObserver(() => {
-        if (install()) {
-          state.readyObserver?.disconnect();
-          state.readyObserver = null;
-          if (state.retryTimer !== null) {
-            clearInterval(state.retryTimer);
-            state.retryTimer = null;
-          }
-        }
-      });
-      state.readyObserver.observe(document.documentElement, {
-        childList: true,
-        subtree: true,
-      });
-    }
+  const installedInitially = install();
 
+  // Thunderbird can construct parts of the Tasks UI after the main 3-pane has
+  // loaded. Keep watching even after the core patch is installed so a later
+  // toolbar/context-menu rebuild receives the TaskFix controls as well.
+  if (typeof MutationObserver === "function") {
+    state.readyObserver = new MutationObserver(() => {
+      try {
+        if (!state.installed) {
+          install();
+        } else {
+          installContextSelectionTracking();
+          ensureTaskFixControls();
+        }
+      } catch (error) {
+        appendLabLog("dom-refresh-failed", {
+          message: String(error?.message || error),
+        });
+        console.error("[TaskFix] DOM refresh failed", error);
+      }
+    });
+    state.readyObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+  }
+
+  if (!installedInitially) {
+    appendLabLog("waiting-for-tasks-ui", {
+      toolbarPresent: Boolean(document.getElementById("task-actions-toolbar")),
+      taskDetailsPresent: Boolean(win.taskDetailsView),
+    });
     let attempts = 0;
     state.retryTimer = setInterval(() => {
       attempts++;
-      if (install() || attempts >= 150) {
-        clearInterval(state.retryTimer);
-        state.retryTimer = null;
+      try {
+        if (install() || attempts >= 300) {
+          clearInterval(state.retryTimer);
+          state.retryTimer = null;
+          if (!state.installed) {
+            appendLabLog("install-timeout", {
+              attempts,
+              toolbarPresent: Boolean(document.getElementById("task-actions-toolbar")),
+              taskTreePresent: Boolean(
+                document.getElementById("calendar-task-tree") ||
+                document.getElementById("unifinder-todo-tree")
+              ),
+            });
+          }
+        }
+      } catch (error) {
+        appendLabLog("install-retry-failed", {
+          attempt: attempts,
+          message: String(error?.message || error),
+        });
       }
     }, 100);
   }

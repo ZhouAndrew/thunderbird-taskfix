@@ -100,6 +100,44 @@
           {"name": "itemId", "type": "string"}
         ],
         "returns": {"type": "any"}
+      },
+      {
+        "name": "diagnosticsInfo",
+        "type": "function",
+        "async": true,
+        "description": "Return the persistent CalDAV Lab diagnostics file location and rotation state.",
+        "parameters": [],
+        "returns": {"type": "any"}
+      },
+      {
+        "name": "readDiagnostics",
+        "type": "function",
+        "async": true,
+        "description": "Read the latest persistent CalDAV Lab diagnostic lines.",
+        "parameters": [
+          {"name": "limit", "type": "integer", "optional": true}
+        ],
+        "returns": {"type": "any"}
+      },
+      {
+        "name": "clearDiagnostics",
+        "type": "function",
+        "async": true,
+        "description": "Clear current and rotated CalDAV Lab diagnostics.",
+        "parameters": [],
+        "returns": {"type": "any"}
+      },
+      {
+        "name": "writeDiagnostic",
+        "type": "function",
+        "async": true,
+        "description": "Append a privacy-filtered diagnostic event.",
+        "parameters": [
+          {"name": "component", "type": "string"},
+          {"name": "event", "type": "string"},
+          {"name": "details", "type": "any", "optional": true}
+        ],
+        "returns": {"type": "any"}
       }
     ],
     "events": [

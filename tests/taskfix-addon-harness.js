@@ -162,12 +162,30 @@ global.editToDoStatus = () => { throw new Error("editor path should not be used"
 global.editConfigState = () => { throw new Error("editor path should not be used"); };
 
 let undoUpdates = 0;
-const undoCommands = [];
+let calendarUndoCalls = 0;
+let calendarRedoCalls = 0;
+let canUndoValue = true;
+let canRedoValue = true;
+let keydownHandler = null;
+
 global.goUpdateCommand = command => {
-  if (command === "cmd_undo") undoUpdates++;
+  if (command === "cmd_undo" || command === "cmd_redo") undoUpdates++;
 };
-global.goDoCommand = command => {
-  undoCommands.push(command);
+global.updateUndoRedoMenu = () => {
+  global.goUpdateCommand("cmd_undo");
+  global.goUpdateCommand("cmd_redo");
+};
+global.canUndo = () => canUndoValue;
+global.canRedo = () => canRedoValue;
+global.undo = () => { calendarUndoCalls++; };
+global.redo = () => { calendarRedoCalls++; };
+global.addEventListener = (type, handler, capture) => {
+  if (type === "keydown" && capture === true) keydownHandler = handler;
+};
+global.removeEventListener = (type, handler, capture) => {
+  if (type === "keydown" && capture === true && keydownHandler === handler) {
+    keydownHandler = null;
+  }
 };
 
 let batchStarts = 0;
@@ -200,9 +218,59 @@ global.contextChangeTaskProgress(100);
 assert(tx.length === 3, "completion must modify all three selected ordinary tasks");
 assert(tx.every(x => x[1].isCompleted === true && x[1].percentComplete === 100),
   "every selected ordinary task must be completed");
-assert(undoUpdates > 0, "TaskFix mutations must refresh Thunderbird's native Undo command");
-assert(global.taskfixUndo() === true, "TaskFix must expose native Undo integration");
-assert(undoCommands.at(-1) === "cmd_undo", "TaskFix Undo must delegate to Thunderbird cmd_undo");
+assert(undoUpdates > 0, "TaskFix mutations must refresh Thunderbird's Calendar Undo command");
+assert(global.taskfixUndo() === true, "TaskFix must expose native Calendar Undo integration");
+assert(calendarUndoCalls === 1, "TaskFix Undo must call Thunderbird Calendar undo(), not generic cmd_undo");
+
+assert(typeof keydownHandler === "function", "TaskFix must install a Ctrl+Z bridge in the Tasks UI");
+let prevented = false;
+let stopped = false;
+keydownHandler({
+  key: "z",
+  ctrlKey: true,
+  metaKey: false,
+  altKey: false,
+  shiftKey: false,
+  defaultPrevented: false,
+  target: tree,
+  preventDefault() { prevented = true; },
+  stopPropagation() { stopped = true; },
+  stopImmediatePropagation() {},
+});
+assert(calendarUndoCalls === 2, "Ctrl+Z in the Tasks tree must call Calendar undo()");
+assert(prevented && stopped, "handled Ctrl+Z must stop the generic Thunderbird undo path");
+
+keydownHandler({
+  key: "z",
+  ctrlKey: true,
+  metaKey: false,
+  altKey: false,
+  shiftKey: true,
+  defaultPrevented: false,
+  target: tree,
+  preventDefault() {},
+  stopPropagation() {},
+  stopImmediatePropagation() {},
+});
+assert(calendarRedoCalls === 1, "Ctrl+Shift+Z in the Tasks tree must call Calendar redo()");
+
+const input = { localName: "input", closest() { return this; } };
+keydownHandler({
+  key: "z",
+  ctrlKey: true,
+  metaKey: false,
+  altKey: false,
+  shiftKey: false,
+  defaultPrevented: false,
+  target: input,
+  preventDefault() { throw new Error("text input Ctrl+Z must not be intercepted"); },
+  stopPropagation() {},
+});
+assert(calendarUndoCalls === 2, "Ctrl+Z in an input must remain text-editor undo");
+
+canUndoValue = false;
+assert(global.taskfixUndo() === false, "TaskFix Undo must not consume Ctrl+Z when Calendar cannot undo");
+canUndoValue = true;
 
 tx = [];
 global.contextChangeTaskPriority(1);
@@ -233,6 +301,8 @@ global.__taskfixAddonCleanup();
 assert(global.contextChangeTaskProgress === originalProgress, "cleanup must restore original progress handler");
 assert(global.contextChangeTaskPriority === originalPriority, "cleanup must restore original priority handler");
 assert(global.taskfixUndo === undefined, "cleanup must remove TaskFix Undo helper");
+assert(global.taskfixRedo === undefined, "cleanup must remove TaskFix Redo helper");
+assert(keydownHandler === null, "cleanup must remove the Ctrl+Z bridge");
 
 assert(batchStarts === batchEnds, "batch transactions must be balanced");
 console.log("taskfix-addon-harness: PASS");

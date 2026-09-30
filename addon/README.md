@@ -1,8 +1,15 @@
 # Thunderbird TaskFix XPI
 
-Current standalone build: 0.3.0 for official Thunderbird 153.x.
+Current standalone build: 0.3.1 for official Thunderbird 153.x.
 
 This is a standalone Thunderbird enhancement add-on. It does not patch or replace Thunderbird application files and has no dependency on any companion application.
+
+## 0.3.1
+
+- Fixes a startup regression in 0.3.0 where TaskFix stopped looking for Thunderbird's lazily-created Tasks panel after 15 seconds.
+- Keeps a DOM readiness observer until the real Tasks toolbar exists, so opening Tasks later still activates Status and the multi-select handlers.
+- Requires both the Tasks toolbar and Mark Completed insertion point before installing, avoiding partial-DOM races.
+- Adds a regression test for delayed Tasks-panel creation.
 
 ## 0.3.0
 

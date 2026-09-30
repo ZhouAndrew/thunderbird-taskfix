@@ -404,19 +404,24 @@ const api = instance.getAPI({}).ThunderbirdCalDAV;
     end: null,
     taskUid: "seed",
     workSession: true,
+    workOpen: true,
   });
-  assert(openWorkEvent.end === null, "open Work VEVENT must not receive an automatic DTEND");
   assert(openWorkEvent.taskUid === "seed", "work event task UID property was not persisted");
   assert(openWorkEvent.workSession === true, "work event marker was not persisted");
+  assert(openWorkEvent.workOpen === true, "work open marker was not persisted");
 
   let openWorkRead = await api.getEvent("cal-a", openWorkEvent.id);
-  assert(openWorkRead.end === null, "open Work VEVENT read-back unexpectedly has DTEND");
-  await api.updateEvent("cal-a", openWorkEvent.id, {end: "2026-10-05T14:30"});
+  assert(openWorkRead.workOpen === true, "open Work VEVENT read-back lost marker");
+  await api.updateEvent("cal-a", openWorkEvent.id, {
+    end: "2026-10-05T14:30",
+    workOpen: false,
+  });
   openWorkRead = await api.getEvent("cal-a", openWorkEvent.id);
   assert(openWorkRead.end?.icalString === "20261005T143000", "Work VEVENT close failed");
-  await api.updateEvent("cal-a", openWorkEvent.id, {end: null});
+  assert(openWorkRead.workOpen === false, "Work VEVENT close did not clear open marker");
+  await api.updateEvent("cal-a", openWorkEvent.id, {end: null, workOpen: true});
   openWorkRead = await api.getEvent("cal-a", openWorkEvent.id);
-  assert(openWorkRead.end === null, "Work VEVENT reopen rollback failed");
+  assert(openWorkRead.workOpen === true, "Work VEVENT reopen rollback failed");
 
   await assertRejects(
     () => api.createEvent("cal-a", {title: "No start"}),

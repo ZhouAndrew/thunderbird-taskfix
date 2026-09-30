@@ -1,7 +1,7 @@
-/* Thunderbird TaskFix 0.2.0 — standalone Thunderbird enhancement */
+/* Thunderbird TaskFix 0.2.1 — standalone Thunderbird enhancement */
 (() => {
   const win = globalThis;
-  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V2_0";
+  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V2_1";
   if (win.__taskfixAddonState?.marker === MARKER) return;
 
   try { win.__taskfixAddonCleanup?.(); } catch (e) {
@@ -430,7 +430,7 @@
     addContextStatusMenu();
 
     state.installed = true;
-    console.info("[TaskFix] 0.2.0 installed");
+    console.info("[TaskFix] 0.2.1 installed");
     return true;
   }
 

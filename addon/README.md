@@ -1,6 +1,6 @@
 # Thunderbird CalDAV Lab
 
-Current build: **0.3.1** for official Thunderbird 153.x.
+Current build: **0.3.2** for official Thunderbird 153.x.
 
 This project is a Thunderbird extension. It is **not** the separate Python/CLI CalDAV Assistant project.
 
@@ -28,6 +28,11 @@ Thunderbird CalDAV Lab XPI
 ```
 
 There is no Native Host, no Python process, no companion daemon, and no second CalDAV client in this add-on.
+
+## 0.3.2 hardening
+
+- Uses Thunderbird's exported `CalTodo` and `CalEvent` constructors directly; `cal.createTodo()` / `cal.createEvent()` do not exist in current Thunderbird calendar utilities.
+- Keeps the direct provider CRUD harness and package contract checks aligned with the real Thunderbird constructor API.
 
 ## 0.3.1 hardening
 

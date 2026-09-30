@@ -1,8 +1,15 @@
 # Thunderbird TaskFix XPI
 
-Current standalone build: 0.3.2 for official Thunderbird 153.x.
+Current standalone build: 0.3.3 for official Thunderbird 153.x.
 
 This is a standalone Thunderbird enhancement add-on. It does not patch or replace Thunderbird application files and has no dependency on any companion application.
+
+## 0.3.3
+
+- Removes the early-startup dependency on `resource://gre/modules/Services.sys.mjs` from the privileged TaskFix Experiment API.
+- Uses Thunderbird/XPCOM services directly for script loading, window enumeration and startup-cache invalidation.
+- This fixes the case where TaskFix could fail during cold Thunderbird startup and only become active after manually reloading the extension.
+- Adds a real Thunderbird 153.1.0esr acceptance run that starts with Tasks closed for more than 15 seconds, then opens Tasks, performs a two-task batch Status change, and verifies Calendar Undo/Redo through both keyboard and command-controller paths.
 
 ## 0.3.2
 

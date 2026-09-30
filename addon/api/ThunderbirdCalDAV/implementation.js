@@ -277,36 +277,57 @@ function applyTaskChanges(item, changes) {
 
   if ("status" in changes) {
     const status = normalizeTaskStatus(changes.status);
-    if (!status) {
-      item.deleteProperty("STATUS");
-      item.isCompleted = false;
-      item.completedDate = null;
-      if (!("percentComplete" in changes)) item.percentComplete = 0;
-    } else if (status === "COMPLETED") {
-      item.status = "COMPLETED";
+    const previousPercent = Number(item.percentComplete || 0);
+
+    if (status === "COMPLETED") {
+      // CalTodo.isCompleted=true owns the standard COMPLETED trio:
+      // STATUS=COMPLETED, PERCENT-COMPLETE=100 and COMPLETED timestamp.
       item.isCompleted = true;
-      item.percentComplete = 100;
     } else {
-      item.status = status;
+      // Important Thunderbird CalTodo semantic: isCompleted=false clears
+      // STATUS, PERCENT-COMPLETE and COMPLETED. Clear first, then restore the
+      // requested non-completed state.
       item.isCompleted = false;
-      item.completedDate = null;
-      if (status === "NEEDS-ACTION" && !("percentComplete" in changes)) {
-        item.percentComplete = 0;
+      if (status) {
+        item.status = status;
+      }
+      if (status === "IN-PROCESS" || status === "CANCELLED") {
+        if (
+          !("percentComplete" in changes) &&
+          previousPercent > 0 &&
+          previousPercent < 100
+        ) {
+          item.percentComplete = previousPercent;
+        }
       }
     }
   }
 
   if ("percentComplete" in changes) {
     const value = normalizePercent(changes.percentComplete);
+    // Match Thunderbird's native task progress semantics.
     item.percentComplete = value;
-    if (value === 100) {
-      item.status = "COMPLETED";
-      item.isCompleted = true;
-    } else if (item.isCompleted) {
-      item.isCompleted = false;
-      item.completedDate = null;
-      if (item.status === "COMPLETED") {
-        item.status = "IN-PROCESS";
+    switch (value) {
+      case 0:
+        item.isCompleted = false;
+        if ("status" in changes) {
+          const status = normalizeTaskStatus(changes.status);
+          if (status && status !== "COMPLETED") item.status = status;
+        }
+        break;
+      case 100:
+        item.isCompleted = true;
+        break;
+      default: {
+        const explicitStatus = "status" in changes
+          ? normalizeTaskStatus(changes.status)
+          : "";
+        item.status =
+          explicitStatus && explicitStatus !== "COMPLETED"
+            ? explicitStatus
+            : "IN-PROCESS";
+        item.completedDate = null;
+        break;
       }
     }
   }

@@ -6,12 +6,14 @@ TB_TIMEZONE="${2:-UTC}"
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 TB_PID=""
+XVFB_PID=""
 RADICALE_PID=""
 REPORT_PID=""
 
 cleanup() {
   set +e
   [[ -n "$TB_PID" ]] && kill "$TB_PID" 2>/dev/null || true
+  [[ -n "$XVFB_PID" ]] && kill "$XVFB_PID" 2>/dev/null || true
   [[ -n "$REPORT_PID" ]] && kill "$REPORT_PID" 2>/dev/null || true
   [[ -n "$RADICALE_PID" ]] && kill "$RADICALE_PID" 2>/dev/null || true
   rm -rf "$TMP"
@@ -696,9 +698,23 @@ user_pref("calendar.list.sortOrder", "acceptance-calendar");
 EOF
 printf 'user_pref("calendar.timezone.local", "%s");\n' "$TB_TIMEZONE" >>"$PROFILE/user.js"
 
+echo "== Start Xvfb =="
+Xvfb :99 -screen 0 1280x1024x24 >"$TMP/xvfb.log" 2>&1 &
+XVFB_PID=$!
+export DISPLAY=:99
+sleep 0.5
+if ! kill -0 "$XVFB_PID" 2>/dev/null; then
+  echo "Xvfb failed to start."
+  cat "$TMP/xvfb.log" || true
+  exit 1
+fi
+
 echo "== Launch real Thunderbird $TB_VERSION ($TB_TIMEZONE) with the XPI =="
 set +e
-xvfb-run -a "$TMP/thunderbird/thunderbird"   -no-remote   -profile "$PROFILE"   >"$TMP/thunderbird.stdout" 2>"$TMP/thunderbird.stderr" &
+"$TMP/thunderbird/thunderbird" \
+  -no-remote \
+  -profile "$PROFILE" \
+  >"$TMP/thunderbird.stdout" 2>"$TMP/thunderbird.stderr" &
 TB_PID=$!
 set -e
 
@@ -792,7 +808,7 @@ rm -f "$TMP/report.json"
 sleep 1
 
 set +e
-xvfb-run -a "$TMP/thunderbird/thunderbird" \
+"$TMP/thunderbird/thunderbird" \
   -no-remote \
   -profile "$PROFILE" \
   >"$TMP/thunderbird-restart.stdout" 2>"$TMP/thunderbird-restart.stderr" &

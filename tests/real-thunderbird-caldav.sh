@@ -40,139 +40,7 @@ permissions = manifest.setdefault("permissions", [])
 host = "http://127.0.0.1/*"
 if host not in permissions:
     permissions.append(host)
-manifest["experiment_apis"]["AcceptanceSetup"] = {
-    "schema": "api/AcceptanceSetup/schema.json",
-    "parent": {
-        "scopes": ["addon_parent"],
-        "paths": [["AcceptanceSetup"]],
-        "script": "api/AcceptanceSetup/implementation.js",
-    },
-}
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-
-setup_dir = root / "api" / "AcceptanceSetup"
-setup_dir.mkdir(parents=True, exist_ok=True)
-(setup_dir / "schema.json").write_text(r'''[
-  {
-    "namespace": "AcceptanceSetup",
-    "functions": [
-      {
-        "name": "configure",
-        "type": "function",
-        "async": true,
-        "parameters": [],
-        "returns": {"type": "any"}
-      }
-    ]
-  }
-]
-''')
-
-(setup_dir / "implementation.js").write_text(r'''"use strict";
-
-var { ExtensionCommon } = ChromeUtils.importESModule(
-  "resource://gre/modules/ExtensionCommon.sys.mjs"
-);
-var { cal } = ChromeUtils.importESModule(
-  "resource:///modules/calendar/calUtils.sys.mjs"
-);
-
-const loginManager = Cc["@mozilla.org/login-manager;1"].getService(
-  Ci.nsILoginManager
-);
-const ioService = Cc["@mozilla.org/network/io-service;1"].getService(
-  Ci.nsIIOService
-);
-
-const ORIGIN = "http://127.0.0.1:5232";
-const REALM = "acceptance-realm";
-const USERNAME = "acceptance";
-const PASSWORD = "test-password";
-const CALENDAR_ID = "acceptance-calendar";
-const CALENDAR_URL = ORIGIN + "/acceptance/test/";
-
-async function ensureLogin() {
-  const existing = await loginManager.searchLoginsAsync({
-    origin: ORIGIN,
-    httpRealm: REALM,
-  });
-  if (existing.some(login => login.username === USERNAME)) {
-    return;
-  }
-
-  const loginInfo = Cc["@mozilla.org/login-manager/loginInfo;1"]
-    .createInstance(Ci.nsILoginInfo);
-  loginInfo.init(
-    ORIGIN,
-    null,
-    REALM,
-    USERNAME,
-    PASSWORD,
-    "",
-    ""
-  );
-  await loginManager.addLoginAsync(loginInfo);
-}
-
-function ensureCalendar() {
-  let calendar = cal.manager.getCalendarById(CALENDAR_ID);
-  if (calendar) {
-    return calendar;
-  }
-
-  calendar = cal.manager.createCalendar(
-    "caldav",
-    ioService.newURI(CALENDAR_URL)
-  );
-  if (!calendar) {
-    throw new Error("Failed to create Thunderbird CalDAV provider");
-  }
-  calendar.name = "Acceptance";
-  calendar.id = CALENDAR_ID;
-  calendar.setProperty("cache.enabled", true);
-  calendar.setProperty("username", USERNAME);
-  calendar.setProperty("calendar-main-default", true);
-  calendar.setProperty("calendar-main-in-composite", true);
-  cal.manager.registerCalendar(calendar);
-  return cal.manager.getCalendarById(CALENDAR_ID);
-}
-
-this.AcceptanceSetup = class extends ExtensionCommon.ExtensionAPI {
-  getAPI() {
-    return {
-      AcceptanceSetup: {
-        async configure() {
-          let stage = "login";
-          try {
-            await ensureLogin();
-            stage = "calendar-create";
-            const calendar = ensureCalendar();
-            stage = "calendar-refresh";
-            if (calendar?.canRefresh) {
-              calendar.refresh();
-            }
-            return {
-              ok: true,
-              id: String(calendar?.id || ""),
-              type: String(calendar?.type || ""),
-              name: String(calendar?.name || ""),
-            };
-          } catch (error) {
-            return {
-              ok: false,
-              stage,
-              name: String(error?.name || ""),
-              error: String(error?.message || error),
-              result: String(error?.result || ""),
-              stack: String(error?.stack || ""),
-            };
-          }
-        },
-      },
-    };
-  }
-};
-''')
 
 acceptance = r'''
 const __ACCEPTANCE_REPORT = "http://127.0.0.1:8765/report";
@@ -209,14 +77,6 @@ async function __waitForAcceptanceCalendar() {
 }
 
 async function __runRealAcceptance() {
-  const setup = await browser.AcceptanceSetup.configure();
-  __acceptanceAssert(
-    setup.ok,
-    `Acceptance setup failed at ${setup.stage}: ${setup.error} ${setup.result}`
-  );
-  __acceptanceAssert(setup.id === "acceptance-calendar", "Acceptance calendar setup failed");
-  __acceptanceAssert(setup.type === "caldav", "Acceptance calendar provider is not CalDAV");
-
   const spaces = await browser.spaces.query({
     isSelfOwned: true,
     name: "thunderbird_caldav_lab",
@@ -508,6 +368,14 @@ user_pref("mailnews.start_page.url", "about:blank");
 user_pref("calendar.item.promptDelete", false);
 user_pref("calendar.timezone.local", "UTC");
 user_pref("calendar.timezone.useSystemTimezone", false);
+user_pref("calendar.registry.acceptance-calendar.calendar-main-default", true);
+user_pref("calendar.registry.acceptance-calendar.calendar-main-in-composite", true);
+user_pref("calendar.registry.acceptance-calendar.cache.enabled", true);
+user_pref("calendar.registry.acceptance-calendar.name", "Acceptance");
+user_pref("calendar.registry.acceptance-calendar.type", "caldav");
+user_pref("calendar.registry.acceptance-calendar.uri", "http://acceptance:test-password@127.0.0.1:5232/acceptance/test/");
+user_pref("calendar.registry.acceptance-calendar.username", "acceptance");
+user_pref("calendar.list.sortOrder", "acceptance-calendar");
 EOF
 
 echo "== Launch real Thunderbird $TB_VERSION with the XPI =="

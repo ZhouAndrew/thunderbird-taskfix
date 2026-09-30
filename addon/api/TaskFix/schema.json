@@ -1,0 +1,14 @@
+[
+  {
+    "namespace": "TaskFix",
+    "description": "Internal activation API for the standalone Thunderbird TaskFix extension.",
+    "functions": [
+      {
+        "name": "activate",
+        "type": "function",
+        "description": "Activate TaskFix window integration.",
+        "parameters": []
+      }
+    ]
+  }
+]

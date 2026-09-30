@@ -1,0 +1,32 @@
+name: real-thunderbird-caldav
+
+on:
+  push:
+    branches:
+      - "rewrite/direct-thunderbird-caldav"
+  pull_request:
+
+jobs:
+  real-thunderbird:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        thunderbird:
+          - "153.0esr"
+          - "153.0.2esr"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install acceptance dependencies
+        run: |
+          python3 -m pip install --user "radicale==3.5.4"
+          if ! command -v xvfb-run >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          fi
+
+      - name: Real Thunderbird + real Radicale acceptance
+        run: |
+          chmod +x tests/real-thunderbird-caldav.sh
+          tests/real-thunderbird-caldav.sh "${{ matrix.thunderbird }}"

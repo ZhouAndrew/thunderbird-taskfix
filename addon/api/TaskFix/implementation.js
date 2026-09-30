@@ -20,6 +20,38 @@ const observerService = Cc["@mozilla.org/observer-service;1"].getService(
 );
 const MESSENGER_URL = "chrome://messenger/content/messenger.xhtml";
 
+function appendTaskFixLog(event, details = {}) {
+  try {
+    const directoryService = Cc["@mozilla.org/file/directory_service;1"]
+      .getService(Ci.nsIProperties);
+    const file = directoryService.get("ProfD", Ci.nsIFile);
+    file.append("thunderbird-caldav-lab.log");
+    if (file.exists() && file.fileSize > 1024 * 1024) {
+      const backup = directoryService.get("ProfD", Ci.nsIFile);
+      backup.append("thunderbird-caldav-lab.log.1");
+      if (backup.exists()) backup.remove(false);
+      file.moveTo(null, "thunderbird-caldav-lab.log.1");
+    }
+    const stream = Cc["@mozilla.org/network/file-output-stream;1"]
+      .createInstance(Ci.nsIFileOutputStream);
+    stream.init(file, 0x02 | 0x08 | 0x10, 0o600, 0);
+    const converter = Cc["@mozilla.org/intl/converter-output-stream;1"]
+      .createInstance(Ci.nsIConverterOutputStream);
+    converter.init(stream, "UTF-8");
+    converter.writeString(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        component: "taskfix-api",
+        event,
+        details,
+      }) + "\n"
+    );
+    converter.close();
+  } catch (error) {
+    console.warn("[TaskFix] diagnostics write failed", error);
+  }
+}
+
 this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
   _activated = false;
   _inject = null;
@@ -81,12 +113,17 @@ this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
         try {
           scriptLoader.loadSubScript(scriptURL, window, "UTF-8");
         } catch (error) {
+          appendTaskFixLog("inject-failed", {
+            message: String(error?.message || error),
+            href: String(window.location?.href || ""),
+          });
           console.error("[TaskFix] Failed to inject task window integration", error);
         }
       };
     }
 
     if (!this._activated) {
+      appendTaskFixLog("activate", {extensionId: String(extension.id || "")});
       ExtensionSupport.registerWindowListener(extension.id, {
         chromeURLs: [MESSENGER_URL],
         onLoadWindow: window => this._inject(window),
@@ -101,14 +138,19 @@ this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
   }
 
   onStartup() {
+    appendTaskFixLog("startup");
     try {
       this._activate();
     } catch (error) {
+      appendTaskFixLog("startup-failed", {
+        message: String(error?.message || error),
+      });
       console.error("[TaskFix] startup activation failed", error);
     }
   }
 
   onShutdown(isAppShutdown) {
+    appendTaskFixLog("shutdown", {isAppShutdown: Boolean(isAppShutdown)});
     this._startupRetryGeneration++;
     if (this._startupRetryTimer !== null) {
       clearTimeout(this._startupRetryTimer);
@@ -142,6 +184,7 @@ this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
     return {
       TaskFix: {
         activate: () => {
+          appendTaskFixLog("activate-request");
           this._activate();
         },
       },

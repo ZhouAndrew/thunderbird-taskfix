@@ -270,6 +270,17 @@ const instance = new global.ThunderbirdCalDAV();
 const api = instance.getAPI({}).ThunderbirdCalDAV;
 
 (async () => {
+  assert(typeof api.writeDiagnostic === "function", "diagnostics writer API missing");
+  assert(typeof api.readDiagnostics === "function", "diagnostics reader API missing");
+  assert(typeof api.clearDiagnostics === "function", "diagnostics clear API missing");
+  const diagnosticWrite = await api.writeDiagnostic("harness", "probe", {
+    password: "must-not-leak",
+    note: "node harness has no profile filesystem",
+  });
+  assert(diagnosticWrite.ok === true, "diagnostics writer must degrade safely outside Thunderbird");
+  const diagnosticRead = await api.readDiagnostics(20);
+  assert(Array.isArray(diagnosticRead.lines), "diagnostics reader result shape is wrong");
+
   const listedCalendars = await api.listCalendars();
   assert(listedCalendars.length === 5, "must list every Thunderbird calendar");
   assert(listedCalendars.find(x => x.id === "cal-ro").readOnly, "read-only flag lost");

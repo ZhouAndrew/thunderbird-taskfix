@@ -8,6 +8,53 @@ function setStatus(message, error = false) {
   $("status").classList.toggle("error", error);
 }
 
+async function writeWorkspaceDiagnostic(event, details = {}) {
+  try {
+    await browser.ThunderbirdCalDAV.writeDiagnostic(
+      "workspace",
+      event,
+      details
+    );
+  } catch (error) {
+    console.warn("[ThunderbirdCalDAV] workspace diagnostics unavailable", error);
+  }
+}
+
+async function refreshDiagnostics() {
+  const [info, diagnostics] = await Promise.all([
+    browser.ThunderbirdCalDAV.diagnosticsInfo(),
+    browser.ThunderbirdCalDAV.readDiagnostics(800),
+  ]);
+  $("diagnostics-path").textContent = info.path || "(不可用)";
+  $("diagnostics-size").textContent = info.exists
+    ? Math.ceil((info.size || 0) / 1024) + " KiB"
+    : "尚未创建";
+  $("diagnostics-log").textContent =
+    diagnostics.text || "暂无诊断记录。";
+}
+
+async function copyDiagnostics() {
+  const diagnostics = await browser.ThunderbirdCalDAV.readDiagnostics(1200);
+  const text = [
+    "Thunderbird CalDAV Lab " + browser.runtime.getManifest().version,
+    diagnostics.path || "",
+    "",
+    diagnostics.text || "",
+  ].join("\n");
+  await navigator.clipboard.writeText(text);
+  setStatus("诊断日志已复制。");
+}
+
+async function clearDiagnostics() {
+  if (!confirm("清空 Thunderbird CalDAV Lab 当前日志和轮转日志？")) return;
+  await browser.ThunderbirdCalDAV.clearDiagnostics();
+  await writeWorkspaceDiagnostic("diagnostics.cleared", {
+    version: browser.runtime.getManifest().version,
+  });
+  await refreshDiagnostics();
+  setStatus("诊断日志已清空。");
+}
+
 function calendarState(id) {
   return state.calendars.find(calendar => calendar.id === id) || null;
 }
@@ -379,9 +426,14 @@ async function refreshAll() {
   await Promise.all([refreshTasks(), refreshEvents()]);
   resetTaskEditor();
   resetEventEditor();
-  setStatus(
-    `已读取 ${state.calendars.length} 个 Calendar、${state.tasks.length} 个任务、${state.events.length} 个事件。`
-  );
+  const summary =
+    `已读取 ${state.calendars.length} 个 Calendar、${state.tasks.length} 个任务、${state.events.length} 个事件。`;
+  setStatus(summary);
+  await writeWorkspaceDiagnostic("refresh.success", {
+    calendars: state.calendars.length,
+    tasks: state.tasks.length,
+    events: state.events.length,
+  });
 }
 
 function guard(fn) {
@@ -391,6 +443,10 @@ function guard(fn) {
       await fn();
     } catch (error) {
       console.error(error);
+      await writeWorkspaceDiagnostic("ui.error", {
+        name: error?.name || "Error",
+        message: error?.message || String(error),
+      });
       setStatus(error?.message || String(error), true);
     }
   };
@@ -404,6 +460,12 @@ for (const button of document.querySelectorAll(".tab")) {
     const selected = button.dataset.tab;
     $("tasks-panel").hidden = selected !== "tasks";
     $("events-panel").hidden = selected !== "events";
+    $("diagnostics-panel").hidden = selected !== "diagnostics";
+    if (selected === "diagnostics") {
+      refreshDiagnostics().catch(error =>
+        setStatus(error?.message || String(error), true)
+      );
+    }
   });
 }
 
@@ -420,6 +482,9 @@ $("event-new").addEventListener("click", resetEventEditor);
 $("event-save").addEventListener("click", guard(saveEvent));
 $("event-delete").addEventListener("click", guard(deleteEvent));
 $("event-range-apply").addEventListener("click", guard(refreshEvents));
+$("diagnostics-refresh").addEventListener("click", guard(refreshDiagnostics));
+$("diagnostics-copy").addEventListener("click", guard(copyDiagnostics));
+$("diagnostics-clear").addEventListener("click", guard(clearDiagnostics));
 
 browser.ThunderbirdCalDAV.onItemsChanged.addListener(() => {
   clearTimeout(globalThis.__thunderbirdCalDAVRefreshTimer);
@@ -430,4 +495,14 @@ browser.ThunderbirdCalDAV.onItemsChanged.addListener(() => {
 });
 
 defaultEventRange();
-refreshAll().catch(error => setStatus(error?.message || String(error), true));
+writeWorkspaceDiagnostic("open", {
+  version: browser.runtime.getManifest().version,
+}).finally(() => {
+  refreshAll().catch(async error => {
+    await writeWorkspaceDiagnostic("initial-refresh.error", {
+      name: error?.name || "Error",
+      message: error?.message || String(error),
+    });
+    setStatus(error?.message || String(error), true);
+  });
+});

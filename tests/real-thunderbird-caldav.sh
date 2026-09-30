@@ -16,6 +16,19 @@ cleanup() {
   [[ -n "$XVFB_PID" ]] && kill "$XVFB_PID" 2>/dev/null || true
   [[ -n "$REPORT_PID" ]] && kill "$REPORT_PID" 2>/dev/null || true
   [[ -n "$RADICALE_PID" ]] && kill "$RADICALE_PID" 2>/dev/null || true
+
+  if [[ -n "${ACCEPTANCE_ARTIFACT_DIR:-}" ]]; then
+    mkdir -p "$ACCEPTANCE_ARTIFACT_DIR"
+    for candidate in       "$TMP/report.json"       "$TMP/thunderbird.stdout"       "$TMP/thunderbird.stderr"       "$TMP/thunderbird-restart.stdout"       "$TMP/thunderbird-restart.stderr"       "$TMP/radicale.log"       "$TMP/xvfb.log"; do
+      [[ -f "$candidate" ]] && cp "$candidate" "$ACCEPTANCE_ARTIFACT_DIR/" || true
+    done
+    if [[ -n "${PROFILE:-}" ]]; then
+      for candidate in         "$PROFILE/thunderbird-caldav-lab.log"         "$PROFILE/thunderbird-caldav-lab.log.1"; do
+        [[ -f "$candidate" ]] && cp "$candidate" "$ACCEPTANCE_ARTIFACT_DIR/" || true
+      done
+    fi
+  fi
+
   rm -rf "$TMP"
 }
 trap cleanup EXIT
@@ -392,6 +405,24 @@ async function __runRealAcceptance() {
   __acceptanceAssert(taskFix.statusButton, "TaskFix Status toolbar button is missing");
   __acceptanceAssert(taskFix.contextStatus, "TaskFix Status context menu is missing");
 
+  __acceptanceStage = "diagnostics";
+  await browser.ThunderbirdCalDAV.writeDiagnostic("acceptance", "probe", {
+    password: "must-not-leak",
+    note: "diagnostics-probe-ok",
+  });
+  const diagnosticInfo = await browser.ThunderbirdCalDAV.diagnosticsInfo();
+  const diagnosticRead = await browser.ThunderbirdCalDAV.readDiagnostics(400);
+  __acceptanceAssert(Boolean(diagnosticInfo.path), "Diagnostics path is missing");
+  __acceptanceAssert(
+    diagnosticRead.text.includes('"component":"acceptance"') &&
+      diagnosticRead.text.includes('"event":"probe"'),
+    "Persistent diagnostics probe was not readable"
+  );
+  __acceptanceAssert(
+    !diagnosticRead.text.includes("must-not-leak"),
+    "Diagnostics did not redact a password field"
+  );
+
   __acceptanceStage = "wait-calendar-seed";
   const calendar = await __waitForAcceptanceCalendar();
   __acceptanceAssert(calendar.type === "caldav", "Configured calendar is not CalDAV");
@@ -522,6 +553,7 @@ async function __runRealAcceptance() {
     workspaceOpened: true,
     workspaceUiCrud: true,
     taskFixRealUi: true,
+    diagnostics: true,
     createdTaskId: createdTask.id,
     createdEventId: event.id,
   };
@@ -699,15 +731,25 @@ EOF
 printf 'user_pref("calendar.timezone.local", "%s");\n' "$TB_TIMEZONE" >>"$PROFILE/user.js"
 
 echo "== Start Xvfb =="
-Xvfb :99 -screen 0 1280x1024x24 >"$TMP/xvfb.log" 2>&1 &
+DISPLAY_FILE="$TMP/xvfb-display"
+Xvfb -displayfd 3 -screen 0 1280x1024x24 3>"$DISPLAY_FILE" >"$TMP/xvfb.log" 2>&1 &
 XVFB_PID=$!
-export DISPLAY=:99
-sleep 0.5
-if ! kill -0 "$XVFB_PID" 2>/dev/null; then
-  echo "Xvfb failed to start."
+for _ in $(seq 1 100); do
+  [[ -s "$DISPLAY_FILE" ]] && break
+  if ! kill -0 "$XVFB_PID" 2>/dev/null; then
+    echo "Xvfb failed to start."
+    cat "$TMP/xvfb.log" || true
+    exit 1
+  fi
+  sleep 0.1
+done
+if [[ ! -s "$DISPLAY_FILE" ]]; then
+  echo "Timed out waiting for Xvfb display allocation."
   cat "$TMP/xvfb.log" || true
   exit 1
 fi
+export DISPLAY=":$(tr -d '[:space:]' < "$DISPLAY_FILE")"
+echo "Xvfb ready on $DISPLAY"
 
 echo "== Launch real Thunderbird $TB_VERSION ($TB_TIMEZONE) with the XPI =="
 set +e
@@ -767,6 +809,7 @@ for key in (
     "workspaceOpened",
     "workspaceUiCrud",
     "taskFixRealUi",
+    "diagnostics",
 ):
     assert data.get(key) is True, (key, data)
 assert data["calendar"]["type"] == "caldav", data
@@ -781,6 +824,20 @@ then
   cat "$TMP/radicale.log" || true
   exit 1
 fi
+
+echo "== Verify persistent CalDAV Lab diagnostics =="
+LAB_LOG="$PROFILE/thunderbird-caldav-lab.log"
+test -s "$LAB_LOG"
+grep -q '"component":"acceptance"' "$LAB_LOG"
+grep -q '"event":"probe"' "$LAB_LOG"
+grep -q '"event":"task.create.success"' "$LAB_LOG"
+grep -q '"event":"event.create.success"' "$LAB_LOG"
+if grep -q 'must-not-leak\|test-password' "$LAB_LOG"; then
+  echo "Sensitive value leaked into diagnostics log"
+  cat "$LAB_LOG"
+  exit 1
+fi
+echo "persistent-diagnostics: PASS ($LAB_LOG)"
 
 echo "== Verify server state after Thunderbird CRUD =="
 curl -fsS -u acceptance:test-password -X PROPFIND -H 'Depth: 1' \
@@ -855,6 +912,7 @@ for key in (
     "workspaceOpened",
     "workspaceUiCrud",
     "taskFixRealUi",
+    "diagnostics",
 ):
     assert data.get(key) is True, (key, data)
 assert data["calendar"]["type"] == "caldav", data
@@ -878,4 +936,18 @@ assert hrefs == ["/acceptance/test/seed-task.ics"], hrefs
 print("radicale-clean-after-restart: PASS")
 PY
 
-echo "Real Thunderbird $TB_VERSION ($TB_TIMEZONE) + real Radicale + restart acceptance: PASS"
+echo "== Verify diagnostics survived Thunderbird restart =="
+test -s "$LAB_LOG"
+python3 - "$LAB_LOG" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+lines = [line for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+events = [json.loads(line) for line in lines]
+assert sum(1 for row in events if row.get("component") == "acceptance" and row.get("event") == "probe") >= 2
+assert any(row.get("component") == "background" and row.get("event") == "startup.success" for row in events)
+print("persistent-diagnostics-after-restart: PASS")
+PY
+
+echo "Real Thunderbird $TB_VERSION ($TB_TIMEZONE) + real Radicale + restart + diagnostics acceptance: PASS"

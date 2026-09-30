@@ -177,6 +177,11 @@
 
   async function finalizeReceipt(receipt) {
     receipt.completedAt = new Date().toISOString();
+    if (!receipt.summary) {
+      receipt.summary = receipt.success
+        ? `${receipt.action} completed and verified.`
+        : `${receipt.action} did not complete: ${receipt.error || "see steps"}`;
+    }
     await AssistantStorage.saveLastReceipt(receipt);
     await AssistantStorage.appendAudit({
       scope: "workflow",
@@ -204,13 +209,12 @@
   }
 
   async function start(task, workCalendarId) {
-    ensureMutableTask(task);
-    const runtime = await AssistantStorage.getRuntime();
-    if (runtime.state !== "idle" && runtime.currentTask) {
-      throw new Error("Another task is already active.");
-    }
-
     return runAction("start", task, async receipt => {
+      ensureMutableTask(task);
+      const runtime = await AssistantStorage.getRuntime();
+      if (runtime.state !== "idle" && runtime.currentTask) {
+        throw new Error("Another task is already active.");
+      }
       const before = {status: task.status || "", paused: Boolean(task.paused)};
       let taskWritten = false;
       try {
@@ -269,13 +273,12 @@
   }
 
   async function pause(task) {
-    ensureMutableTask(task);
-    const runtime = await AssistantStorage.getRuntime();
-    if (runtime.state !== "working" || !sameTask(runtime, task)) {
-      throw new Error("The selected task is not the currently working task.");
-    }
-
     return runAction("pause", task, async receipt => {
+      ensureMutableTask(task);
+      const runtime = await AssistantStorage.getRuntime();
+      if (runtime.state !== "working" || !sameTask(runtime, task)) {
+        throw new Error("The selected task is not the currently working task.");
+      }
       const endedAt = toLocalInput();
       let closed = false;
       try {
@@ -317,13 +320,12 @@
   }
 
   async function resume(task, workCalendarId) {
-    ensureMutableTask(task);
-    const runtime = await AssistantStorage.getRuntime();
-    if (runtime.state !== "paused" || !sameTask(runtime, task)) {
-      throw new Error("The selected task is not paused.");
-    }
-
     return runAction("resume", task, async receipt => {
+      ensureMutableTask(task);
+      const runtime = await AssistantStorage.getRuntime();
+      if (runtime.state !== "paused" || !sameTask(runtime, task)) {
+        throw new Error("The selected task is not paused.");
+      }
       let taskWritten = false;
       try {
         await updateAndVerifyTask(
@@ -372,14 +374,14 @@
   }
 
   async function finish(task, status) {
-    ensureMutableTask(task);
-    const runtime = await AssistantStorage.getRuntime();
-    if (!sameTask(runtime, task) || !["working", "paused"].includes(runtime.state)) {
-      throw new Error("The selected task is not the current task.");
-    }
     const action = status === "COMPLETED" ? "complete" : "cancel";
 
     return runAction(action, task, async receipt => {
+      ensureMutableTask(task);
+      const runtime = await AssistantStorage.getRuntime();
+      if (!sameTask(runtime, task) || !["working", "paused"].includes(runtime.state)) {
+        throw new Error("The selected task is not the current task.");
+      }
       if (runtime.state === "working" && runtime.currentWorkEvent) {
         await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
       }

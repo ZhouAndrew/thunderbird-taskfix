@@ -1,0 +1,28 @@
+{
+  "manifest_version": 2,
+  "name": "Thunderbird TaskFix",
+  "description": "Standalone Thunderbird task-list enhancement for reliable recurring-safe multi-select Status, Progress, Category, Priority and completion editing.",
+  "version": "0.3.0",
+  "author": "ZhouAndrew",
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ZhouAndrew.thunderbird-taskfix@addons.thunderbird.net",
+      "strict_min_version": "153.0",
+      "strict_max_version": "153.*"
+    }
+  },
+  "experiment_apis": {
+    "TaskFix": {
+      "schema": "api/TaskFix/schema.json",
+      "parent": {
+        "scopes": ["addon_parent"],
+        "paths": [["TaskFix"]],
+        "script": "api/TaskFix/implementation.js",
+        "events": ["startup"]
+      }
+    }
+  }
+}

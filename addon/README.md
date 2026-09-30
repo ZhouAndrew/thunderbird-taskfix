@@ -1,8 +1,16 @@
 # Thunderbird TaskFix XPI
 
-Current standalone build: 0.2.1 for official Thunderbird 153.x.
+Current standalone build: 0.3.0 for official Thunderbird 153.x.
 
 This is a standalone Thunderbird enhancement add-on. It does not patch or replace Thunderbird application files and has no dependency on any companion application.
+
+## 0.3.0
+
+- Adds native Undo support for TaskFix edits.
+- Every multi-select Status, Progress, Category, Priority or completion change remains inside Thunderbird's own transaction manager.
+- A TaskFix batch is kept as one Thunderbird batch transaction, so **Edit → Undo** / **Ctrl+Z** rolls back the most recent batch as one operation.
+- After each TaskFix mutation the native `cmd_undo` command state is refreshed; TaskFix does not maintain a competing private undo stack.
+- Cleanup removes the TaskFix Undo bridge together with the other injected helpers.
 
 ## 0.2.1
 

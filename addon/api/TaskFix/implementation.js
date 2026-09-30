@@ -6,6 +6,9 @@ var { ExtensionCommon } = ChromeUtils.importESModule(
 var { ExtensionSupport } = ChromeUtils.importESModule(
   "resource:///modules/ExtensionSupport.sys.mjs"
 );
+var { setTimeout, clearTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 const scriptLoader = Cc["@mozilla.org/moz/jssubscript-loader;1"].getService(
   Ci.mozIJSSubScriptLoader
 );
@@ -20,6 +23,8 @@ const MESSENGER_URL = "chrome://messenger/content/messenger.xhtml";
 this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
   _activated = false;
   _inject = null;
+  _startupRetryTimer = null;
+  _startupRetryGeneration = 0;
 
   _isMessengerWindow(window) {
     if (!window || window.closed) {
@@ -29,6 +34,39 @@ this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
     const windowType =
       window.document?.documentElement?.getAttribute?.("windowtype") ?? "";
     return href.startsWith(MESSENGER_URL) || windowType === "mail:3pane";
+  }
+
+  _scheduleStartupInjection() {
+    const generation = ++this._startupRetryGeneration;
+    const run = attempt => {
+      if (generation !== this._startupRetryGeneration || !this._inject) {
+        return;
+      }
+
+      let sawMessengerWindow = false;
+      for (const window of windowMediator.getEnumerator(null)) {
+        if (this._isMessengerWindow(window)) {
+          sawMessengerWindow = true;
+          this._inject(window);
+        }
+      }
+
+      // Thunderbird 153.0esr can restore the 3-pane after the Experiment API
+      // has already activated.  ExtensionSupport may miss that exact load
+      // transition, so keep scanning briefly.  taskfix-window.js is
+      // idempotent, making repeat injection safe.
+      if (attempt < 120) {
+        this._startupRetryTimer = setTimeout(() => run(attempt + 1), sawMessengerWindow ? 250 : 100);
+      } else {
+        this._startupRetryTimer = null;
+      }
+    };
+
+    if (this._startupRetryTimer !== null) {
+      clearTimeout(this._startupRetryTimer);
+      this._startupRetryTimer = null;
+    }
+    run(0);
   }
 
   _activate() {
@@ -59,6 +97,7 @@ this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
     for (const window of windowMediator.getEnumerator(null)) {
       this._inject(window);
     }
+    this._scheduleStartupInjection();
   }
 
   onStartup() {
@@ -70,6 +109,11 @@ this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
   }
 
   onShutdown(isAppShutdown) {
+    this._startupRetryGeneration++;
+    if (this._startupRetryTimer !== null) {
+      clearTimeout(this._startupRetryTimer);
+      this._startupRetryTimer = null;
+    }
     if (this._activated) {
       try {
         ExtensionSupport.unregisterWindowListener(this.extension.id);

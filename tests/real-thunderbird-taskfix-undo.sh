@@ -114,11 +114,14 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
     return {
       AcceptanceTaskFix: {
         async run() {
+          let stage = "window";
+          try {
           const wm = Cc["@mozilla.org/appshell/window-mediator;1"]
             .getService(Ci.nsIWindowMediator);
           const window = wm.getMostRecentWindow("mail:3pane");
           if (!window) throw new Error("No Thunderbird 3-pane window");
 
+          stage = "open-tasks";
           // IMPORTANT: the acceptance runner intentionally waits >15 seconds
           // before calling this API. This reproduces the lazy Tasks-panel path
           // that broke TaskFix 0.3.0.
@@ -128,6 +131,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             window.document.getElementById("tasksButton")?.click();
           }
 
+          stage = "wait-taskfix-ui";
           await waitFor(
             window,
             () =>
@@ -140,6 +144,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             "TaskFix controls and handlers in real Tasks UI"
           );
 
+          stage = "create-memory-calendar";
           const tree = window.document.getElementById("calendar-task-tree");
           tree.ensureInitialized?.();
 
@@ -156,6 +161,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             composite.addCalendar(calendar);
           }
 
+          stage = "create-tasks";
           const ids = ["taskfix-real-undo-a", "taskfix-real-undo-b"];
           for (const [index, id] of ids.entries()) {
             const task = new CalTodo();
@@ -166,6 +172,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             await calendar.addItem(task);
           }
 
+          stage = "refresh-task-tree";
           tree.refresh();
           await waitFor(
             window,
@@ -173,6 +180,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             "two real tasks to appear in the Thunderbird Tasks tree"
           );
 
+          stage = "select-real-tasks";
           const indexes = ids.map(id => tree.mTaskArray.findIndex(task => task.id === id));
           if (indexes.some(index => index < 0)) {
             throw new Error("Acceptance tasks are not present in real Tasks tree");
@@ -187,10 +195,12 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             throw new Error("Real task-tree multi-selection failed: " + JSON.stringify(selectedIds));
           }
 
+          stage = "prepare-calendar-transaction-manager";
           const manager = CalTransactionManager.getInstance();
           manager.undoStack = [];
           manager.redoStack = [];
 
+          stage = "taskfix-batch-status";
           // Real TaskFix batch mutation against two real Thunderbird calendar items.
           window.contextChangeTaskStatus("IN-PROCESS");
           await waitFor(
@@ -201,6 +211,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             "TaskFix batch Status change"
           );
 
+          stage = "inspect-batch-transaction";
           const top = manager.peekUndoStack();
           if (!manager.canUndo()) {
             throw new Error("Calendar transaction manager cannot undo TaskFix batch");
@@ -215,6 +226,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             );
           }
 
+          stage = "direct-undo";
           // Direct TaskFix helper must use Calendar undo(), not mail/editor undo.
           if (!window.taskfixUndo()) {
             throw new Error("taskfixUndo() refused a real Calendar undo");
@@ -227,6 +239,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             "direct TaskFix Calendar undo"
           );
 
+          stage = "direct-redo";
           if (!window.taskfixRedo()) {
             throw new Error("taskfixRedo() refused a real Calendar redo");
           }
@@ -238,6 +251,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             "direct TaskFix Calendar redo"
           );
 
+          stage = "ctrl-z";
           // Exercise the actual keyboard path on the real Tasks tree.
           tree.dispatchEvent(
             new window.KeyboardEvent("keydown", {
@@ -256,6 +270,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             "Ctrl+Z real Tasks-tree undo"
           );
 
+          stage = "ctrl-shift-z";
           tree.dispatchEvent(
             new window.KeyboardEvent("keydown", {
               key: "z",
@@ -274,6 +289,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             "Ctrl+Shift+Z real Tasks-tree redo"
           );
 
+          stage = "command-undo";
           // Exercise Thunderbird's real command-controller path too.
           window.goDoCommand("cmd_undo");
           await waitFor(
@@ -284,6 +300,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             "Edit/command cmd_undo path"
           );
 
+          stage = "command-redo";
           window.goDoCommand("cmd_redo");
           await waitFor(
             window,
@@ -293,6 +310,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             "Edit/command cmd_redo path"
           );
 
+          stage = "cleanup";
           cal.manager.unregisterCalendar(calendar);
 
           return {
@@ -309,6 +327,15 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             commandUndo: true,
             commandRedo: true,
           };
+          } catch (error) {
+            return {
+              ok: false,
+              stage,
+              name: error?.name || "",
+              message: error?.message || String(error),
+              error: error?.stack || error?.message || String(error),
+            };
+          }
         },
       },
     };

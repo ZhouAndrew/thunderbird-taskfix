@@ -263,6 +263,26 @@ async function resumeReadbackRollback() {
   assert(runtime.state === "paused" && !runtime.currentWorkEvent, "failed Resume did not restore paused runtime");
 }
 
+async function cancelLifecycle() {
+  resetAll();
+  let receipt = await AssistantExecutor.start(clone(task), "work");
+  assert(receipt.success, "Cancel setup Start failed");
+  let runtime = await AssistantStorage.getRuntime();
+  const workId = runtime.currentWorkEvent.id;
+
+  receipt = await AssistantExecutor.cancel(clone(task));
+  assert(receipt.success, "Cancel failed");
+  assert(task.status === "CANCELLED", "Cancel did not set CANCELLED");
+  assert(task.paused === false, "Cancel left Task paused");
+  assert(events.get(workId)?.end && !events.get(workId)?.workOpen, "Cancel did not close Work VEVENT");
+  runtime = await AssistantStorage.getRuntime();
+  assert(runtime.state === "idle" && !runtime.currentTask, "Cancel did not clear runtime");
+  assert(
+    receipt.steps.some(step => step.component === "WordPress" && step.operation === "not invoked"),
+    "Cancel receipt must explicitly say WordPress was not invoked"
+  );
+}
+
 async function completeWriteRollback() {
   resetAll();
   let receipt = await AssistantExecutor.start(clone(task), "work");
@@ -286,6 +306,7 @@ async function completeWriteRollback() {
   await uncertainCreateRollback();
   await pauseWriteRollback();
   await resumeReadbackRollback();
+  await cancelLifecycle();
   await completeWriteRollback();
   console.log("workflow-harness: PASS");
 })().catch(error => {

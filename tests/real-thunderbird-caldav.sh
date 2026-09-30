@@ -2,6 +2,7 @@
 set -euo pipefail
 
 TB_VERSION="${1:-153.0.2esr}"
+TB_TIMEZONE="${2:-UTC}"
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 TB_PID=""
@@ -378,6 +379,7 @@ async function __runRealAcceptance() {
   );
   __acceptanceAssert(workspaceResult.taskUiCrud, "Workspace task CRUD did not pass");
   __acceptanceAssert(workspaceResult.eventUiCrud, "Workspace event CRUD did not pass");
+  await browser.tabs.remove(workspaceTab.id);
 
   __acceptanceStage = "taskfix-real-ui";
   const taskFix = await browser.AcceptanceTaskFix.openTasksAndCheck();
@@ -682,7 +684,6 @@ user_pref("mail.winsearch.firstRunDone", true);
 user_pref("mailnews.start_page.override_url", "about:blank");
 user_pref("mailnews.start_page.url", "about:blank");
 user_pref("calendar.item.promptDelete", false);
-user_pref("calendar.timezone.local", "UTC");
 user_pref("calendar.timezone.useSystemTimezone", false);
 user_pref("calendar.registry.acceptance-calendar.calendar-main-default", true);
 user_pref("calendar.registry.acceptance-calendar.calendar-main-in-composite", true);
@@ -693,8 +694,9 @@ user_pref("calendar.registry.acceptance-calendar.uri", "http://acceptance:test-p
 user_pref("calendar.registry.acceptance-calendar.username", "acceptance");
 user_pref("calendar.list.sortOrder", "acceptance-calendar");
 EOF
+printf 'user_pref("calendar.timezone.local", "%s");\n' "$TB_TIMEZONE" >>"$PROFILE/user.js"
 
-echo "== Launch real Thunderbird $TB_VERSION with the XPI =="
+echo "== Launch real Thunderbird $TB_VERSION ($TB_TIMEZONE) with the XPI =="
 set +e
 xvfb-run -a "$TMP/thunderbird/thunderbird"   -no-remote   -profile "$PROFILE"   >"$TMP/thunderbird.stdout" 2>"$TMP/thunderbird.stderr" &
 TB_PID=$!
@@ -765,11 +767,99 @@ then
 fi
 
 echo "== Verify server state after Thunderbird CRUD =="
-propfind="$(curl -fsS -u acceptance:test-password -X PROPFIND -H 'Depth: 1' http://127.0.0.1:5232/acceptance/test/)"
-grep -Fq 'seed-task.ics' <<<"$propfind"
-if grep -Fq 'Runtime Task' <<<"$propfind" || grep -Fq 'Runtime Event' <<<"$propfind"; then
-  echo "Unexpected runtime acceptance item remained on the CalDAV server."
+curl -fsS -u acceptance:test-password -X PROPFIND -H 'Depth: 1' \
+  http://127.0.0.1:5232/acceptance/test/ >"$TMP/propfind.xml"
+python3 - "$TMP/propfind.xml" <<'PY'
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.fromstring(Path(sys.argv[1]).read_bytes())
+hrefs = [
+    (node.text or "").strip()
+    for node in root.findall(".//{DAV:}href")
+    if (node.text or "").strip().endswith(".ics")
+]
+assert hrefs == ["/acceptance/test/seed-task.ics"], hrefs
+print("radicale-clean-after-crud: PASS")
+PY
+
+echo "== Restart the same Thunderbird profile and repeat acceptance =="
+kill "$TB_PID" 2>/dev/null || true
+wait "$TB_PID" 2>/dev/null || true
+TB_PID=""
+rm -f "$TMP/report.json"
+sleep 1
+
+set +e
+xvfb-run -a "$TMP/thunderbird/thunderbird" \
+  -no-remote \
+  -profile "$PROFILE" \
+  >"$TMP/thunderbird-restart.stdout" 2>"$TMP/thunderbird-restart.stderr" &
+TB_PID=$!
+set -e
+
+for _ in $(seq 1 260); do
+  if [[ -s "$TMP/report.json" ]]; then
+    break
+  fi
+  if ! kill -0 "$TB_PID" 2>/dev/null; then
+    echo "Thunderbird exited during restart acceptance."
+    cat "$TMP/thunderbird-restart.stdout" || true
+    cat "$TMP/thunderbird-restart.stderr" || true
+    exit 1
+  fi
+  sleep 0.25
+done
+
+if [[ ! -s "$TMP/report.json" ]]; then
+  echo "Timed out waiting for restart acceptance result."
+  cat "$TMP/thunderbird-restart.stdout" || true
+  cat "$TMP/thunderbird-restart.stderr" || true
+  cat "$TMP/radicale.log" || true
   exit 1
 fi
 
-echo "Real Thunderbird $TB_VERSION + real Radicale acceptance: PASS"
+echo "== Restart acceptance result =="
+cat "$TMP/report.json"
+python3 - "$TMP/report.json" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+data = json.loads(Path(sys.argv[1]).read_text())
+assert data.get("ok") is True, data
+for key in (
+    "thunderbirdCalDAV",
+    "seedTaskRead",
+    "taskCrud",
+    "eventCrud",
+    "validation",
+    "spaceCreated",
+    "workspaceOpened",
+    "workspaceUiCrud",
+    "taskFixRealUi",
+):
+    assert data.get(key) is True, (key, data)
+assert data["calendar"]["type"] == "caldav", data
+print("real-thunderbird-restart: PASS")
+PY
+
+curl -fsS -u acceptance:test-password -X PROPFIND -H 'Depth: 1' \
+  http://127.0.0.1:5232/acceptance/test/ >"$TMP/propfind-restart.xml"
+python3 - "$TMP/propfind-restart.xml" <<'PY'
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.fromstring(Path(sys.argv[1]).read_bytes())
+hrefs = [
+    (node.text or "").strip()
+    for node in root.findall(".//{DAV:}href")
+    if (node.text or "").strip().endswith(".ics")
+]
+assert hrefs == ["/acceptance/test/seed-task.ics"], hrefs
+print("radicale-clean-after-restart: PASS")
+PY
+
+echo "Real Thunderbird $TB_VERSION ($TB_TIMEZONE) + real Radicale + restart acceptance: PASS"

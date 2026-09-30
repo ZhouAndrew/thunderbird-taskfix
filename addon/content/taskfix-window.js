@@ -19,6 +19,7 @@
     contextPopupShowing: null,
     contextPopupHiding: null,
     keydownHandler: null,
+    undoCommandController: null,
   };
   win.__taskfixAddonState = state;
 
@@ -168,6 +169,51 @@
       event.stopImmediatePropagation?.();
     };
     win.addEventListener("keydown", state.keydownHandler, true);
+  }
+
+  function shouldHandleUndoCommand() {
+    if (!taskUiIsActive()) return false;
+    const focused =
+      document.commandDispatcher?.focusedElement ??
+      document.activeElement ??
+      null;
+    return !isEditableTarget(focused);
+  }
+
+  function installUndoCommandController() {
+    if (state.undoCommandController || !win.top?.controllers) return;
+
+    const controller = {
+      supportsCommand(command) {
+        return (
+          (command === "cmd_undo" || command === "cmd_redo") &&
+          shouldHandleUndoCommand()
+        );
+      },
+      isCommandEnabled(command) {
+        if (!this.supportsCommand(command)) return false;
+        if (command === "cmd_undo") {
+          return typeof canUndo === "function" ? canUndo() : false;
+        }
+        return typeof canRedo === "function" ? canRedo() : false;
+      },
+      doCommand(command) {
+        if (!this.isCommandEnabled(command)) return;
+        if (command === "cmd_undo") {
+          taskfixUndo();
+        } else if (command === "cmd_redo") {
+          taskfixRedo();
+        }
+      },
+      onEvent() {},
+    };
+
+    // Put this ahead of Thunderbird's generic mail/editor controller, but only
+    // claim Undo/Redo while the Tasks UI is active and focus is not in an
+    // editable text control.
+    win.top.controllers.insertControllerAt(0, controller);
+    state.undoCommandController = controller;
+    refreshUndoRedoCommands();
   }
 
   function taskfixModifySelectedTasks(mutator) {
@@ -518,6 +564,7 @@
 
     installContextSelectionTracking();
     installUndoShortcutBridge();
+    installUndoCommandController();
     addToolbarStatusMenu();
     addContextStatusMenu();
 
@@ -533,6 +580,14 @@
     if (state.keydownHandler && typeof win.removeEventListener === "function") {
       win.removeEventListener("keydown", state.keydownHandler, true);
       state.keydownHandler = null;
+    }
+    if (state.undoCommandController && win.top?.controllers) {
+      try {
+        win.top.controllers.removeController(state.undoCommandController);
+      } catch (error) {
+        console.warn("[TaskFix] Could not remove Undo command controller", error);
+      }
+      state.undoCommandController = null;
     }
     if (state.contextPopup) {
       if (state.contextPopupShowing)

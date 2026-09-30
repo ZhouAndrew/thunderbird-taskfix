@@ -40,11 +40,281 @@ permissions = manifest.setdefault("permissions", [])
 host = "http://127.0.0.1/*"
 if host not in permissions:
     permissions.append(host)
+
+manifest["experiment_apis"]["AcceptanceTaskFix"] = {
+    "schema": "api/AcceptanceTaskFix/schema.json",
+    "parent": {
+        "scopes": ["addon_parent"],
+        "paths": [["AcceptanceTaskFix"]],
+        "script": "api/AcceptanceTaskFix/implementation.js",
+    },
+}
+taskfix_dir = root / "api" / "AcceptanceTaskFix"
+taskfix_dir.mkdir(parents=True, exist_ok=True)
+(taskfix_dir / "schema.json").write_text(r'''[
+  {
+    "namespace": "AcceptanceTaskFix",
+    "functions": [
+      {
+        "name": "openTasksAndCheck",
+        "type": "function",
+        "async": true,
+        "parameters": [],
+        "returns": {"type": "any"}
+      }
+    ]
+  }
+]
+''')
+(taskfix_dir / "implementation.js").write_text(r'''"use strict";
+
+var { ExtensionCommon } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionCommon.sys.mjs"
+);
+
+function delay(window, ms) {
+  return new Promise(resolve => window.setTimeout(resolve, ms));
+}
+
+this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
+  getAPI() {
+    return {
+      AcceptanceTaskFix: {
+        async openTasksAndCheck() {
+          const wm = Cc["@mozilla.org/appshell/window-mediator;1"]
+            .getService(Ci.nsIWindowMediator);
+          const window = wm.getMostRecentWindow("mail:3pane");
+          if (!window) {
+            return {ok: false, error: "No Thunderbird 3-pane window"};
+          }
+
+          if (typeof window.calSwitchToTaskMode === "function") {
+            window.calSwitchToTaskMode();
+          } else {
+            window.document.getElementById("tasksButton")?.click();
+          }
+
+          for (let attempt = 0; attempt < 80; attempt++) {
+            const taskTree = window.document.getElementById("calendar-task-tree");
+            const toolbar = window.document.getElementById("task-actions-toolbar");
+            const status = window.document.getElementById("task-actions-status");
+            const contextStatus = window.document.getElementById("task-context-menu-status");
+            if (taskTree && toolbar && status && contextStatus) {
+              return {
+                ok: true,
+                marker: String(window.__taskfixAddonState?.marker || ""),
+                taskTree: true,
+                toolbar: true,
+                statusButton: true,
+                contextStatus: true,
+              };
+            }
+            await delay(window, 100);
+          }
+
+          return {
+            ok: false,
+            error: "TaskFix controls did not appear in the real Tasks UI",
+            marker: String(window.__taskfixAddonState?.marker || ""),
+            taskTree: Boolean(window.document.getElementById("calendar-task-tree")),
+            toolbar: Boolean(window.document.getElementById("task-actions-toolbar")),
+            statusButton: Boolean(window.document.getElementById("task-actions-status")),
+            contextStatus: Boolean(window.document.getElementById("task-context-menu-status")),
+          };
+        },
+      },
+    };
+  }
+};
+''')
+
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+
+workspace_acceptance = r'''
+async function __workspaceWaitFor(predicate, label, timeoutMs = 15000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error("Workspace timeout: " + label);
+}
+
+function __workspaceAssert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+async function __runWorkspaceAcceptance() {
+  await __workspaceWaitFor(
+    () =>
+      state.calendars.some(calendar => calendar.id === "acceptance-calendar") &&
+      state.tasks.some(task => task.id === "seed-task"),
+    "initial Calendar/VTODO render"
+  );
+
+  const calendarOption = [...$("calendar-filter").options].find(
+    option => option.value === "acceptance-calendar"
+  );
+  __workspaceAssert(calendarOption, "Workspace calendar filter did not render the CalDAV calendar");
+  __workspaceAssert(
+    [...$("task-list").querySelectorAll(".item-title")].some(
+      node => node.textContent === "Seed task from Radicale"
+    ),
+    "Workspace task list did not render the seed VTODO"
+  );
+
+  $("task-calendar").value = "acceptance-calendar";
+  $("task-title").value = "Workspace UI Task";
+  $("task-due").value = "2026-10-07";
+  $("task-status").value = "NEEDS-ACTION";
+  $("task-priority").value = "5";
+  $("task-categories").value = "UI, Acceptance";
+  $("task-description").value = "Created through real workspace controls";
+  $("task-save").click();
+
+  await __workspaceWaitFor(
+    () => state.tasks.some(task => task.title === "Workspace UI Task"),
+    "task create"
+  );
+  await new Promise(resolve => setTimeout(resolve, 400));
+
+  let task = state.tasks.find(item => item.title === "Workspace UI Task");
+  let taskRow = [...$("task-list").children].find(
+    row => row.querySelector?.(".item-title")?.textContent === "Workspace UI Task"
+  );
+  __workspaceAssert(taskRow, "Created task row was not rendered");
+  taskRow.click();
+  __workspaceAssert($("task-id").value === task.id, "Task row click did not load editor");
+
+  $("task-title").value = "Workspace UI Task Updated";
+  $("task-due").value = "2026-10-08";
+  $("task-status").value = "IN-PROCESS";
+  $("task-priority").value = "1";
+  $("task-categories").value = "UI, Updated";
+  $("task-save").click();
+
+  await __workspaceWaitFor(
+    () =>
+      state.tasks.some(
+        item =>
+          item.id === task.id &&
+          item.title === "Workspace UI Task Updated" &&
+          item.status === "IN-PROCESS" &&
+          item.priority === 1
+      ),
+    "task update"
+  );
+  await new Promise(resolve => setTimeout(resolve, 400));
+
+  task = state.tasks.find(item => item.id === task.id);
+  taskRow = [...$("task-list").children].find(
+    row => row.querySelector?.(".item-title")?.textContent === "Workspace UI Task Updated"
+  );
+  __workspaceAssert(taskRow, "Updated task row was not rendered");
+  taskRow.click();
+  globalThis.confirm = () => true;
+  $("task-delete").click();
+
+  await __workspaceWaitFor(
+    () => !state.tasks.some(item => item.id === task.id),
+    "task delete"
+  );
+
+  $("event-calendar").value = "acceptance-calendar";
+  $("event-title").value = "Workspace UI Event";
+  $("event-start").value = "2026-10-08T09:00";
+  $("event-end").value = "2026-10-08T10:00";
+  $("event-categories").value = "UI, Acceptance";
+  $("event-description").value = "Created through real workspace controls";
+  $("event-save").click();
+
+  await __workspaceWaitFor(
+    () => state.events.some(event => event.title === "Workspace UI Event"),
+    "event create"
+  );
+  await new Promise(resolve => setTimeout(resolve, 400));
+
+  let event = state.events.find(item => item.title === "Workspace UI Event");
+  let eventRow = [...$("event-list").children].find(
+    row => row.querySelector?.(".item-title")?.textContent === "Workspace UI Event"
+  );
+  __workspaceAssert(eventRow, "Created event row was not rendered");
+  eventRow.click();
+  __workspaceAssert($("event-id").value === event.id, "Event row click did not load editor");
+
+  $("event-title").value = "Workspace UI Event Updated";
+  $("event-start").value = "2026-10-08T11:00";
+  $("event-end").value = "2026-10-08T12:30";
+  $("event-categories").value = "UI, Updated";
+  $("event-save").click();
+
+  await __workspaceWaitFor(
+    () =>
+      state.events.some(
+        item => item.id === event.id && item.title === "Workspace UI Event Updated"
+      ),
+    "event update"
+  );
+  await new Promise(resolve => setTimeout(resolve, 400));
+
+  event = state.events.find(item => item.id === event.id);
+  eventRow = [...$("event-list").children].find(
+    row => row.querySelector?.(".item-title")?.textContent === "Workspace UI Event Updated"
+  );
+  __workspaceAssert(eventRow, "Updated event row was not rendered");
+  eventRow.click();
+  globalThis.confirm = () => true;
+  $("event-delete").click();
+
+  await __workspaceWaitFor(
+    () => !state.events.some(item => item.id === event.id),
+    "event delete"
+  );
+
+  return {
+    ok: true,
+    calendarRendered: true,
+    seedTaskRendered: true,
+    taskUiCrud: true,
+    eventUiCrud: true,
+    statusText: $("status").textContent,
+  };
+}
+
+setTimeout(() => {
+  __runWorkspaceAcceptance()
+    .then(result =>
+      browser.runtime.sendMessage({
+        kind: "thunderbird-caldav-workspace-acceptance",
+        result,
+      })
+    )
+    .catch(error =>
+      browser.runtime.sendMessage({
+        kind: "thunderbird-caldav-workspace-acceptance",
+        result: {
+          ok: false,
+          error: error?.stack || error?.message || String(error),
+        },
+      })
+    );
+}, 800);
+'''
+with (root / "workspace.js").open("a", encoding="utf-8") as handle:
+    handle.write("\n" + workspace_acceptance + "\n")
 
 acceptance = r'''
 const __ACCEPTANCE_REPORT = "http://127.0.0.1:8765/report";
 let __acceptanceStage = "startup";
+let __workspaceAcceptanceResolve;
+const __workspaceAcceptancePromise = new Promise(resolve => {
+  __workspaceAcceptanceResolve = resolve;
+});
+browser.runtime.onMessage.addListener(message => {
+  if (message?.kind === "thunderbird-caldav-workspace-acceptance") {
+    __workspaceAcceptanceResolve(message.result);
+  }
+});
 
 function __acceptanceAssert(condition, message) {
   if (!condition) throw new Error(message);
@@ -94,7 +364,29 @@ async function __runRealAcceptance() {
     url: browser.runtime.getURL("workspace.html"),
   });
   __acceptanceAssert(Boolean(workspaceTab?.id), "Workspace tab could not be opened");
-  await __acceptanceDelay(800);
+
+  __acceptanceStage = "workspace-ui";
+  const workspaceResult = await Promise.race([
+    __workspaceAcceptancePromise,
+    __acceptanceDelay(25000).then(() => {
+      throw new Error("Timed out waiting for workspace UI acceptance");
+    }),
+  ]);
+  __acceptanceAssert(
+    workspaceResult?.ok,
+    "Workspace UI acceptance failed: " + (workspaceResult?.error || "unknown")
+  );
+  __acceptanceAssert(workspaceResult.taskUiCrud, "Workspace task CRUD did not pass");
+  __acceptanceAssert(workspaceResult.eventUiCrud, "Workspace event CRUD did not pass");
+
+  __acceptanceStage = "taskfix-real-ui";
+  const taskFix = await browser.AcceptanceTaskFix.openTasksAndCheck();
+  __acceptanceAssert(
+    taskFix?.ok,
+    "TaskFix real Tasks UI injection failed: " + JSON.stringify(taskFix)
+  );
+  __acceptanceAssert(taskFix.statusButton, "TaskFix Status toolbar button is missing");
+  __acceptanceAssert(taskFix.contextStatus, "TaskFix Status context menu is missing");
 
   __acceptanceStage = "wait-calendar-seed";
   const calendar = await __waitForAcceptanceCalendar();
@@ -224,6 +516,10 @@ async function __runRealAcceptance() {
     validation: true,
     spaceCreated: true,
     workspaceOpened: true,
+    workspaceUiCrud: true,
+    taskFixRealUi: true,
+    createdTaskId: createdTask.id,
+    createdEventId: event.id,
   };
 }
 
@@ -451,6 +747,8 @@ for key in (
     "validation",
     "spaceCreated",
     "workspaceOpened",
+    "workspaceUiCrud",
+    "taskFixRealUi",
 ):
     assert data.get(key) is True, (key, data)
 assert data["calendar"]["type"] == "caldav", data

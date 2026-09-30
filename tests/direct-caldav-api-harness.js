@@ -40,6 +40,11 @@ class DateTime {
     value.timezone = this.timezone;
     return value;
   }
+  getInTimezone(timezone) {
+    const value = this.clone();
+    value.timezone = timezone;
+    return value;
+  }
   compare(other) {
     const normalize = text => {
       if (/^\d{8}$/.test(text)) return text + "T000000";

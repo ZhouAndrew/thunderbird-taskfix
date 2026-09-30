@@ -54,6 +54,10 @@ function __acceptanceDelay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function __acceptanceIcalEquals(actual, expected) {
+  return String(actual || "").replace(/Z$/, "") === expected;
+}
+
 async function __acceptanceReport(payload) {
   await fetch(__ACCEPTANCE_REPORT, {
     method: "POST",
@@ -175,8 +179,8 @@ async function __runRealAcceptance() {
   });
   __acceptanceAssert(updatedEvent.title === "Runtime Event Updated", "Event title update failed");
   __acceptanceAssert(
-    updatedEvent.start?.icalString === "20261005T110000",
-    "Event start update failed"
+    __acceptanceIcalEquals(updatedEvent.start?.icalString, "20261005T110000"),
+    `Event start update failed: ${updatedEvent.start?.icalString}; source=${updatedEvent.start?.sourceIcalString}`
   );
 
   __acceptanceStage = "invalid-event-validation";

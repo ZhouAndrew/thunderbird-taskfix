@@ -290,27 +290,34 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
           );
 
           stage = "command-undo";
-          // Exercise Thunderbird's real command-controller path too. A real
-          // user reaches Edit -> Undo while the task tree has focus.
+          // Exercise the actual Edit -> Undo / Redo menu command path. This is
+          // the same entry point Thunderbird's own task Undo/Redo browser test
+          // uses (menu_undo/menu_redo.doCommand()).
           tree.focus();
           await delay(window, 100);
-          window.goDoCommand("cmd_undo");
+          window.updateUndoRedoMenu?.();
+          const undoMenu = window.document.getElementById("menu_undo");
+          const redoMenu = window.document.getElementById("menu_redo");
+          if (!undoMenu || !redoMenu) {
+            throw new Error("Thunderbird Edit Undo/Redo menu items are missing");
+          }
+          undoMenu.doCommand();
           await waitFor(
             window,
             async () =>
               (await taskStatus(calendar, ids[0])) === null &&
               (await taskStatus(calendar, ids[1])) === null,
-            "Edit/command cmd_undo path"
+            "Edit menu Undo path"
           );
 
           stage = "command-redo";
-          window.goDoCommand("cmd_redo");
+          redoMenu.doCommand();
           await waitFor(
             window,
             async () =>
               (await taskStatus(calendar, ids[0])) === "IN-PROCESS" &&
               (await taskStatus(calendar, ids[1])) === "IN-PROCESS",
-            "Edit/command cmd_redo path"
+            "Edit menu Redo path"
           );
 
           stage = "cleanup";

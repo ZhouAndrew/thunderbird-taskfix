@@ -14,8 +14,9 @@ jobs:
       fail-fast: false
       matrix:
         thunderbird:
-          - "153.0esr"
           - "153.0.2esr"
+          - "153.1.0esr"
+          - "153.3.1esr"
         timezone:
           - "UTC"
           - "Asia/Shanghai"

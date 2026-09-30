@@ -1,12 +1,14 @@
 # Thunderbird TaskFix XPI
 
-Current standalone build: 0.2.0 for official Thunderbird 153.x.
+Current standalone build: 0.2.1 for official Thunderbird 153.x.
 
 This is a standalone Thunderbird enhancement add-on. It does not patch or replace Thunderbird application files and has no dependency on any companion application.
 
-## 0.2.0
+## 0.2.1
 
 - Standalone add-on identity and packaging; no `apply.sh` is needed for normal use.
+- Explicit background activation calls the Experiment API after install/startup, while the Experiment startup hook remains as a fallback.
+- Existing Thunderbird main windows are injected immediately; future main windows are handled by the registered window listener.
 - Resolves the real selected rows from the active task tree, including Ctrl/Shift multi-selection.
 - Recurring-safe batch mutation core groups selected occurrences by recurring parent before committing changes.
 - Adds a complete Status menu in both the task toolbar and task right-click context menu.

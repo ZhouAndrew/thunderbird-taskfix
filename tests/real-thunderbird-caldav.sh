@@ -401,7 +401,7 @@ async function __runRealAcceptance() {
   __acceptanceAssert(workflowTask.paused === false, "Completed Task retained paused marker");
 
   __acceptanceStage = "verify-work-sessions";
-  let workEvents = (await browser.ThunderbirdCalDAV.listEvents(calendar.id)).filter(
+  let workEvents = (await browser.ThunderbirdCalDAV.listEvents(calendar.id, "", "")).filter(
     item => item.workSession && item.taskUid === "seed-task"
   );
   __acceptanceAssert(workEvents.length >= 2, "Start/Resume did not create separate Work VEVENTs");
@@ -490,7 +490,7 @@ async function __runRealAcceptance() {
   });
 
   tasks = await browser.ThunderbirdCalDAV.listTasks(calendar.id);
-  events = await browser.ThunderbirdCalDAV.listEvents(calendar.id);
+  events = await browser.ThunderbirdCalDAV.listEvents(calendar.id, "", "");
   __acceptanceAssert(
     tasks.length === 1 &&
       tasks[0].id === "seed-task" &&

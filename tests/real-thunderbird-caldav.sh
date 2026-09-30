@@ -16,6 +16,19 @@ cleanup() {
   [[ -n "$XVFB_PID" ]] && kill "$XVFB_PID" 2>/dev/null || true
   [[ -n "$REPORT_PID" ]] && kill "$REPORT_PID" 2>/dev/null || true
   [[ -n "$RADICALE_PID" ]] && kill "$RADICALE_PID" 2>/dev/null || true
+
+  if [[ -n "${ACCEPTANCE_ARTIFACT_DIR:-}" ]]; then
+    mkdir -p "$ACCEPTANCE_ARTIFACT_DIR"
+    for candidate in       "$TMP/report.json"       "$TMP/thunderbird.stdout"       "$TMP/thunderbird.stderr"       "$TMP/thunderbird-restart.stdout"       "$TMP/thunderbird-restart.stderr"       "$TMP/radicale.log"       "$TMP/xvfb.log"; do
+      [[ -f "$candidate" ]] && cp "$candidate" "$ACCEPTANCE_ARTIFACT_DIR/" || true
+    done
+    if [[ -n "${PROFILE:-}" ]]; then
+      for candidate in         "$PROFILE/thunderbird-caldav-lab.log"         "$PROFILE/thunderbird-caldav-lab.log.1"; do
+        [[ -f "$candidate" ]] && cp "$candidate" "$ACCEPTANCE_ARTIFACT_DIR/" || true
+      done
+    fi
+  fi
+
   rm -rf "$TMP"
 }
 trap cleanup EXIT

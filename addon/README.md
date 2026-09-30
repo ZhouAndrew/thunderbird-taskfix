@@ -1,6 +1,6 @@
 # Thunderbird CalDAV Lab
 
-Current build: **0.3.0** for official Thunderbird 153.x.
+Current build: **0.3.1** for official Thunderbird 153.x.
 
 This project is a Thunderbird extension. It is **not** the separate Python/CLI CalDAV Assistant project.
 
@@ -28,6 +28,18 @@ Thunderbird CalDAV Lab XPI
 ```
 
 There is no Native Host, no Python process, no companion daemon, and no second CalDAV client in this add-on.
+
+## 0.3.1 hardening
+
+- Imports Thunderbird's real `ExtensionError` implementation instead of relying on an undeclared global.
+- Rejects disabled/read-only calendars and calendars that do not support the requested item type.
+- Validates VTODO status, priority and percent-complete values.
+- Uses `calendar.getItem()` for exact update/delete targets.
+- Rejects VEVENT end times earlier than their start.
+- Prevents accidental cross-calendar edits by locking the Calendar selector while editing an existing item.
+- Read-only items remain viewable but Save/Delete are disabled.
+- Makes the UI's event-range end date inclusive.
+- Adds a direct Calendar-provider API harness covering create/read/update/delete and error paths.
 
 ## 0.3.0 rewrite
 

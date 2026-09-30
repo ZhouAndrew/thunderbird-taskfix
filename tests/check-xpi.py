@@ -22,7 +22,7 @@ with zipfile.ZipFile(path) as z:
 
     manifest = json.loads(z.read("manifest.json"))
     assert manifest["name"] == "Thunderbird CalDAV Lab"
-    assert manifest["version"] == "0.3.0"
+    assert manifest["version"] == "0.3.1"
     assert manifest["browser_specific_settings"]["gecko"]["id"] == (
         "ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net"
     )
@@ -43,6 +43,12 @@ with zipfile.ZipFile(path) as z:
     assert ".modifyItem(" in direct
     assert ".deleteItem(" in direct
     assert "browser.ThunderbirdCalDAV" in workspace
+    assert "ExtensionUtils" in direct and "ExtensionError" in direct
+    assert "calendar.getItem(" in direct
+    assert "Calendar is disabled" in direct
+    assert "Event end must not be before its start" in direct
+    assert "task-calendar\").disabled = true" in workspace
+    assert "inclusiveEndAsExclusive" in workspace
 
     joined = b"\n".join(z.read(n) for n in names if n.endswith((".js", ".json", ".md")))
     lowered = joined.lower()

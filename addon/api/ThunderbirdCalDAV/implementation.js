@@ -3,9 +3,20 @@
 var {
   ExtensionCommon: { ExtensionAPI, EventManager },
 } = ChromeUtils.importESModule("resource://gre/modules/ExtensionCommon.sys.mjs");
+var {
+  ExtensionUtils: { ExtensionError },
+} = ChromeUtils.importESModule("resource://gre/modules/ExtensionUtils.sys.mjs");
 var { cal } = ChromeUtils.importESModule(
   "resource:///modules/calendar/calUtils.sys.mjs"
 );
+
+const TASK_STATUSES = new Set([
+  "",
+  "NEEDS-ACTION",
+  "IN-PROCESS",
+  "COMPLETED",
+  "CANCELLED",
+]);
 
 function calendarObserver(methods = {}) {
   return Object.assign(
@@ -30,9 +41,36 @@ function allCalendars() {
 }
 
 function calendarById(id) {
-  const calendar = allCalendars().find(candidate => String(candidate.id) === String(id));
+  const wanted = String(id || "");
+  const calendar = allCalendars().find(candidate => String(candidate.id) === wanted);
   if (!calendar) {
-    throw new ExtensionError(`Thunderbird calendar not found: ${id}`);
+    throw new ExtensionError(`Thunderbird calendar not found: ${wanted}`);
+  }
+  return calendar;
+}
+
+function calendarSupports(calendar, kind) {
+  const property =
+    kind === "task"
+      ? "capabilities.tasks.supported"
+      : "capabilities.events.supported";
+  return calendar.getProperty(property) !== false;
+}
+
+function writableCalendarById(id, kind) {
+  const calendar = calendarById(id);
+  if (calendar.getProperty("disabled")) {
+    throw new ExtensionError("Calendar is disabled");
+  }
+  if (calendar.readOnly) {
+    throw new ExtensionError("Calendar is read-only");
+  }
+  if (!calendarSupports(calendar, kind)) {
+    throw new ExtensionError(
+      kind === "task"
+        ? "Calendar does not support tasks"
+        : "Calendar does not support events"
+    );
   }
   return calendar;
 }
@@ -51,8 +89,8 @@ function calendarView(calendar) {
     type: String(calendar.type || ""),
     readOnly: Boolean(calendar.readOnly),
     disabled: Boolean(calendar.getProperty("disabled")),
-    supportsTasks: calendar.getProperty("capabilities.tasks.supported") !== false,
-    supportsEvents: calendar.getProperty("capabilities.events.supported") !== false,
+    supportsTasks: calendarSupports(calendar, "task"),
+    supportsEvents: calendarSupports(calendar, "event"),
   };
 }
 
@@ -74,11 +112,17 @@ function dateView(value) {
 }
 
 function taskView(item) {
-  const status = String(item.getProperty("STATUS") || item.status || "").toUpperCase();
+  const status = String(
+    item.getProperty("STATUS") || item.status || ""
+  ).toUpperCase();
   return {
     id: String(item.id || ""),
-    calendarId: String(item.calendar?.superCalendar?.id || item.calendar?.id || ""),
-    calendarName: String(item.calendar?.superCalendar?.name || item.calendar?.name || ""),
+    calendarId: String(
+      item.calendar?.superCalendar?.id || item.calendar?.id || ""
+    ),
+    calendarName: String(
+      item.calendar?.superCalendar?.name || item.calendar?.name || ""
+    ),
     title: String(item.title || ""),
     status,
     completed: status === "COMPLETED" || Boolean(item.isCompleted),
@@ -96,8 +140,12 @@ function taskView(item) {
 function eventView(item) {
   return {
     id: String(item.id || ""),
-    calendarId: String(item.calendar?.superCalendar?.id || item.calendar?.id || ""),
-    calendarName: String(item.calendar?.superCalendar?.name || item.calendar?.name || ""),
+    calendarId: String(
+      item.calendar?.superCalendar?.id || item.calendar?.id || ""
+    ),
+    calendarName: String(
+      item.calendar?.superCalendar?.name || item.calendar?.name || ""
+    ),
     title: String(item.title || ""),
     start: dateView(item.startDate),
     end: dateView(item.endDate),
@@ -118,10 +166,15 @@ function fromInputDate(value) {
 
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
   if (dateOnly) {
-    return cal.createDateTime(`${dateOnly[1]}${dateOnly[2]}${dateOnly[3]}`);
+    return cal.createDateTime(
+      `${dateOnly[1]}${dateOnly[2]}${dateOnly[3]}`
+    );
   }
 
-  const local = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(text);
+  const local =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(
+      text
+    );
   if (local) {
     const dt = cal.createDateTime(
       `${local[1]}${local[2]}${local[3]}T${local[4]}${local[5]}${local[6] || "00"}`
@@ -147,13 +200,20 @@ async function readItems(calendar, filter, start = null, end = null) {
   }
 }
 
-async function findItem(calendar, itemId, typeFilter) {
-  const items = await readItems(calendar, typeFilter);
-  const item = items.find(candidate => String(candidate.id) === String(itemId));
-  if (!item) {
-    throw new ExtensionError(`Calendar item not found: ${itemId}`);
+async function findItem(calendar, itemId, kind) {
+  const id = String(itemId || "");
+  const direct = await calendar.getItem(id);
+  if (direct) {
+    if (kind === "task" && !direct.isTodo?.()) {
+      throw new ExtensionError(`Item is not a task: ${id}`);
+    }
+    if (kind === "event" && !direct.isEvent?.()) {
+      throw new ExtensionError(`Item is not an event: ${id}`);
+    }
+    return direct;
   }
-  return item;
+
+  throw new ExtensionError(`Calendar item not found: ${id}`);
 }
 
 function setDescription(item, value) {
@@ -167,33 +227,63 @@ function setDescription(item, value) {
 function setCategories(item, values) {
   const categories = Array.isArray(values)
     ? values.map(value => String(value).trim()).filter(Boolean)
-    : String(values || "").split(",").map(value => value.trim()).filter(Boolean);
+    : String(values || "")
+        .split(",")
+        .map(value => value.trim())
+        .filter(Boolean);
   item.setCategories([...new Set(categories)]);
+}
+
+function normalizePriority(value) {
+  const priority = Number(value);
+  if (!Number.isInteger(priority) || priority < 0 || priority > 9) {
+    throw new ExtensionError("Priority must be an integer from 0 to 9");
+  }
+  return priority;
+}
+
+function normalizePercent(value) {
+  const percent = Number(value);
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+    throw new ExtensionError("Percent complete must be from 0 to 100");
+  }
+  return Math.round(percent);
+}
+
+function normalizeTaskStatus(value) {
+  const status =
+    value === null || value === undefined
+      ? ""
+      : String(value).trim().toUpperCase();
+  if (!TASK_STATUSES.has(status)) {
+    throw new ExtensionError(`Unsupported VTODO status: ${status}`);
+  }
+  return status;
 }
 
 function applyTaskChanges(item, changes) {
   if ("title" in changes) item.title = String(changes.title || "");
   if ("description" in changes) setDescription(item, changes.description);
-  if ("priority" in changes) item.priority = Number(changes.priority || 0);
+  if ("priority" in changes) item.priority = normalizePriority(changes.priority);
   if ("categories" in changes) setCategories(item, changes.categories);
   if ("due" in changes) item.dueDate = fromInputDate(changes.due);
   if ("start" in changes) item.entryDate = fromInputDate(changes.start);
 
   if ("status" in changes) {
-    const status = changes.status === null ? "" : String(changes.status || "").toUpperCase();
+    const status = normalizeTaskStatus(changes.status);
     if (!status) {
       item.deleteProperty("STATUS");
       item.isCompleted = false;
       item.completedDate = null;
       if (!("percentComplete" in changes)) item.percentComplete = 0;
     } else if (status === "COMPLETED") {
-      item.isCompleted = true;
       item.status = "COMPLETED";
+      item.isCompleted = true;
       item.percentComplete = 100;
     } else {
+      item.status = status;
       item.isCompleted = false;
       item.completedDate = null;
-      item.status = status;
       if (status === "NEEDS-ACTION" && !("percentComplete" in changes)) {
         item.percentComplete = 0;
       }
@@ -201,13 +291,17 @@ function applyTaskChanges(item, changes) {
   }
 
   if ("percentComplete" in changes) {
-    const value = Math.max(0, Math.min(100, Number(changes.percentComplete || 0)));
+    const value = normalizePercent(changes.percentComplete);
     item.percentComplete = value;
     if (value === 100) {
+      item.status = "COMPLETED";
       item.isCompleted = true;
     } else if (item.isCompleted) {
       item.isCompleted = false;
       item.completedDate = null;
+      if (item.status === "COMPLETED") {
+        item.status = "IN-PROCESS";
+      }
     }
   }
 }
@@ -219,9 +313,21 @@ function applyEventChanges(item, changes) {
   if ("start" in changes) item.startDate = fromInputDate(changes.start);
   if ("end" in changes) item.endDate = fromInputDate(changes.end);
   if ("status" in changes) {
-    const status = String(changes.status || "").trim();
+    const status = String(changes.status || "").trim().toUpperCase();
     if (status) item.status = status;
     else item.deleteProperty("STATUS");
+  }
+}
+
+function validateEvent(item) {
+  if (!item.startDate) {
+    throw new ExtensionError("Event start is required");
+  }
+  if (!item.endDate) {
+    item.endDate = item.startDate.clone();
+  }
+  if (item.endDate.compare(item.startDate) < 0) {
+    throw new ExtensionError("Event end must not be before its start");
   }
 }
 
@@ -231,125 +337,141 @@ async function modifyItem(calendar, oldItem, mutator) {
     const newParent = oldParent.clone();
     const recurrenceInfo = newParent.recurrenceInfo;
     const occurrence = recurrenceInfo.getOccurrenceFor(oldItem.recurrenceId);
+    if (!occurrence) {
+      throw new ExtensionError("Recurring occurrence was not found");
+    }
     mutator(occurrence);
     recurrenceInfo.modifyException(occurrence, true);
-    await calendar.modifyItem(newParent, oldParent);
-    return occurrence;
+    const storedParent = await calendar.modifyItem(newParent, oldParent);
+    const storedOccurrence =
+      storedParent?.recurrenceInfo?.getOccurrenceFor?.(oldItem.recurrenceId);
+    return storedOccurrence || occurrence;
   }
 
   const changed = oldItem.clone();
   mutator(changed);
-  await calendar.modifyItem(changed, oldItem);
-  return changed;
+  return (await calendar.modifyItem(changed, oldItem)) || changed;
+}
+
+async function listCalendarsApi() {
+  return allCalendars().map(calendarView);
+}
+
+async function listTasksApi(calendarId = "") {
+  const filter =
+    Ci.calICalendar.ITEM_FILTER_TYPE_TODO |
+    Ci.calICalendar.ITEM_FILTER_COMPLETED_ALL;
+  const batches = await Promise.all(
+    selectedCalendars(calendarId)
+      .filter(calendar => calendarSupports(calendar, "task"))
+      .map(async calendar =>
+        (await readItems(calendar, filter))
+          .filter(item => item?.isTodo?.())
+          .map(taskView)
+      )
+  );
+  return batches.flat();
+}
+
+async function listEventsApi(calendarId = "", start = "", end = "") {
+  const filter = Ci.calICalendar.ITEM_FILTER_TYPE_EVENT;
+  const startDate = fromInputDate(start);
+  const endDate = fromInputDate(end);
+  const batches = await Promise.all(
+    selectedCalendars(calendarId)
+      .filter(calendar => calendarSupports(calendar, "event"))
+      .map(async calendar =>
+        (await readItems(calendar, filter, startDate, endDate))
+          .filter(item => item?.isEvent?.())
+          .map(eventView)
+      )
+  );
+  return batches.flat();
+}
+
+async function createTaskApi(calendarId, values) {
+  const calendar = writableCalendarById(calendarId, "task");
+  const task = cal.createTodo();
+  task.calendar = calendar;
+  applyTaskChanges(task, values || {});
+  const added = await calendar.addItem(task);
+  return taskView(added || task);
+}
+
+async function updateTaskApi(calendarId, itemId, changes) {
+  const calendar = writableCalendarById(calendarId, "task");
+  const oldItem = await findItem(calendar, itemId, "task");
+  const changed = await modifyItem(calendar, oldItem, item =>
+    applyTaskChanges(item, changes || {})
+  );
+  return taskView(changed);
+}
+
+async function deleteTaskApi(calendarId, itemId) {
+  const calendar = writableCalendarById(calendarId, "task");
+  const item = await findItem(calendar, itemId, "task");
+  await calendar.deleteItem(item);
+  return { ok: true, id: String(itemId) };
+}
+
+async function createEventApi(calendarId, values) {
+  const calendar = writableCalendarById(calendarId, "event");
+  const event = cal.createEvent();
+  event.calendar = calendar;
+  applyEventChanges(event, values || {});
+  validateEvent(event);
+  const added = await calendar.addItem(event);
+  return eventView(added || event);
+}
+
+async function updateEventApi(calendarId, itemId, changes) {
+  const calendar = writableCalendarById(calendarId, "event");
+  const oldItem = await findItem(calendar, itemId, "event");
+  const changed = await modifyItem(calendar, oldItem, item => {
+    applyEventChanges(item, changes || {});
+    validateEvent(item);
+  });
+  return eventView(changed);
+}
+
+async function deleteEventApi(calendarId, itemId) {
+  const calendar = writableCalendarById(calendarId, "event");
+  const item = await findItem(calendar, itemId, "event");
+  await calendar.deleteItem(item);
+  return { ok: true, id: String(itemId) };
 }
 
 this.ThunderbirdCalDAV = class extends ExtensionAPI {
   getAPI(context) {
     return {
       ThunderbirdCalDAV: {
-        async listCalendars() {
-          return allCalendars().map(calendarView);
-        },
-
-        async listTasks(calendarId = "") {
-          const filter =
-            Ci.calICalendar.ITEM_FILTER_TYPE_TODO |
-            Ci.calICalendar.ITEM_FILTER_COMPLETED_ALL;
-          const batches = await Promise.all(
-            selectedCalendars(calendarId)
-              .filter(calendar => calendar.getProperty("capabilities.tasks.supported") !== false)
-              .map(async calendar => (await readItems(calendar, filter))
-                .filter(item => item?.isTodo?.())
-                .map(taskView))
-          );
-          return batches.flat();
-        },
-
-        async listEvents(calendarId = "", start = "", end = "") {
-          const filter = Ci.calICalendar.ITEM_FILTER_TYPE_EVENT;
-          const startDate = fromInputDate(start);
-          const endDate = fromInputDate(end);
-          const batches = await Promise.all(
-            selectedCalendars(calendarId)
-              .filter(calendar => calendar.getProperty("capabilities.events.supported") !== false)
-              .map(async calendar => (await readItems(calendar, filter, startDate, endDate))
-                .filter(item => item?.isEvent?.())
-                .map(eventView))
-          );
-          return batches.flat();
-        },
-
-        async createTask(calendarId, values) {
-          const calendar = calendarById(calendarId);
-          if (calendar.readOnly) throw new ExtensionError("Calendar is read-only");
-          const task = cal.createTodo();
-          task.calendar = calendar;
-          applyTaskChanges(task, values || {});
-          const added = await calendar.addItem(task);
-          return taskView(added || task);
-        },
-
-        async updateTask(calendarId, itemId, changes) {
-          const calendar = calendarById(calendarId);
-          if (calendar.readOnly) throw new ExtensionError("Calendar is read-only");
-          const filter =
-            Ci.calICalendar.ITEM_FILTER_TYPE_TODO |
-            Ci.calICalendar.ITEM_FILTER_COMPLETED_ALL;
-          const oldItem = await findItem(calendar, itemId, filter);
-          const changed = await modifyItem(calendar, oldItem, item => applyTaskChanges(item, changes || {}));
-          return taskView(changed);
-        },
-
-        async deleteTask(calendarId, itemId) {
-          const calendar = calendarById(calendarId);
-          if (calendar.readOnly) throw new ExtensionError("Calendar is read-only");
-          const filter =
-            Ci.calICalendar.ITEM_FILTER_TYPE_TODO |
-            Ci.calICalendar.ITEM_FILTER_COMPLETED_ALL;
-          const item = await findItem(calendar, itemId, filter);
-          await calendar.deleteItem(item);
-          return {ok: true, id: itemId};
-        },
-
-        async createEvent(calendarId, values) {
-          const calendar = calendarById(calendarId);
-          if (calendar.readOnly) throw new ExtensionError("Calendar is read-only");
-          const event = cal.createEvent();
-          event.calendar = calendar;
-          applyEventChanges(event, values || {});
-          if (!event.startDate) throw new ExtensionError("Event start is required");
-          if (!event.endDate) event.endDate = event.startDate.clone();
-          const added = await calendar.addItem(event);
-          return eventView(added || event);
-        },
-
-        async updateEvent(calendarId, itemId, changes) {
-          const calendar = calendarById(calendarId);
-          if (calendar.readOnly) throw new ExtensionError("Calendar is read-only");
-          const filter = Ci.calICalendar.ITEM_FILTER_TYPE_EVENT;
-          const oldItem = await findItem(calendar, itemId, filter);
-          const changed = await modifyItem(calendar, oldItem, item => applyEventChanges(item, changes || {}));
-          return eventView(changed);
-        },
-
-        async deleteEvent(calendarId, itemId) {
-          const calendar = calendarById(calendarId);
-          if (calendar.readOnly) throw new ExtensionError("Calendar is read-only");
-          const filter = Ci.calICalendar.ITEM_FILTER_TYPE_EVENT;
-          const item = await findItem(calendar, itemId, filter);
-          await calendar.deleteItem(item);
-          return {ok: true, id: itemId};
-        },
+        listCalendars: listCalendarsApi,
+        listTasks: listTasksApi,
+        listEvents: listEventsApi,
+        createTask: createTaskApi,
+        updateTask: updateTaskApi,
+        deleteTask: deleteTaskApi,
+        createEvent: createEventApi,
+        updateEvent: updateEventApi,
+        deleteEvent: deleteEventApi,
 
         onItemsChanged: new EventManager({
           context,
           name: "ThunderbirdCalDAV.onItemsChanged",
           register: fire => {
             const observer = calendarObserver({
-              onLoad() { fire.async(); },
-              onAddItem() { fire.async(); },
-              onModifyItem() { fire.async(); },
-              onDeleteItem() { fire.async(); },
+              onLoad() {
+                fire.async();
+              },
+              onAddItem() {
+                fire.async();
+              },
+              onModifyItem() {
+                fire.async();
+              },
+              onDeleteItem() {
+                fire.async();
+              },
             });
             cal.manager.addCalendarObserver(observer);
             return () => cal.manager.removeCalendarObserver(observer);

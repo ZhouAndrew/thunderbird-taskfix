@@ -1,7 +1,7 @@
 /* Thunderbird TaskFix 0.2.1 — standalone Thunderbird enhancement */
 (() => {
   const win = globalThis;
-  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V3_4";
+  const MARKER = "THUNDERBIRD_TASKFIX_ADDON_V3_5";
   if (
     win.__taskfixAddonState?.marker === MARKER &&
     win.__taskfixAddonState?.installed
@@ -499,7 +499,7 @@
         document.getElementById("unifinder-todo-tree")
       ),
     });
-    console.info("[TaskFix] 0.3.4 installed");
+    console.info("[TaskFix] 0.3.5 installed");
     return true;
   }
 

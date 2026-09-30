@@ -88,7 +88,6 @@ browser.ThunderbirdCalDAV = {
   },
 };
 
-global.crypto = require("crypto").webcrypto;
 global.window = global;
 
 for (const path of ["addon/core/storage.js", "addon/core/executor.js"]) {

@@ -12,6 +12,7 @@
     marker: MARKER,
     installed: false,
     retryTimer: null,
+    readyObserver: null,
     originals: {},
     contextTree: null,
     contextPopup: null,
@@ -436,6 +437,8 @@
 
   win.__taskfixAddonCleanup = () => {
     if (state.retryTimer !== null) clearInterval(state.retryTimer);
+    state.readyObserver?.disconnect();
+    state.readyObserver = null;
     if (state.contextPopup) {
       if (state.contextPopupShowing)
         state.contextPopup.removeEventListener("popupshowing", state.contextPopupShowing, true);
@@ -464,6 +467,26 @@
   };
 
   if (!install()) {
+    // The Tasks panel can be created long after the main Thunderbird window.
+    // Keep a DOM observer so installing the add-on before opening Tasks does not
+    // lose the Status/Category/Progress/Priority integration after 15 seconds.
+    if (typeof MutationObserver === "function") {
+      state.readyObserver = new MutationObserver(() => {
+        if (install()) {
+          state.readyObserver?.disconnect();
+          state.readyObserver = null;
+          if (state.retryTimer !== null) {
+            clearInterval(state.retryTimer);
+            state.retryTimer = null;
+          }
+        }
+      });
+      state.readyObserver.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+      });
+    }
+
     let attempts = 0;
     state.retryTimer = setInterval(() => {
       attempts++;

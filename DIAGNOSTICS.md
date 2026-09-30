@@ -1,6 +1,6 @@
 # Thunderbird CalDAV Lab 0.3.x diagnostics
 
-Version 0.3.4 adds a persistent, extension-owned diagnostic log for production troubleshooting.
+Version 0.3.5 adds a persistent, extension-owned diagnostic log for production troubleshooting.
 
 ## Where the log is
 

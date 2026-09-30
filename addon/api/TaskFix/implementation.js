@@ -6,8 +6,15 @@ var { ExtensionCommon } = ChromeUtils.importESModule(
 var { ExtensionSupport } = ChromeUtils.importESModule(
   "resource:///modules/ExtensionSupport.sys.mjs"
 );
-// Thunderbird 153 exposes Services as a privileged extension-parent global.
-// Do not import the removed Services.sys.mjs resource.
+const scriptLoader = Cc["@mozilla.org/moz/jssubscript-loader;1"].getService(
+  Ci.mozIJSSubScriptLoader
+);
+const windowMediator = Cc["@mozilla.org/appshell/window-mediator;1"].getService(
+  Ci.nsIWindowMediator
+);
+const observerService = Cc["@mozilla.org/observer-service;1"].getService(
+  Ci.nsIObserverService
+);
 const MESSENGER_URL = "chrome://messenger/content/messenger.xhtml";
 
 this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
@@ -34,7 +41,7 @@ this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
           return;
         }
         try {
-          Services.scriptloader.loadSubScript(scriptURL, window, "UTF-8");
+          scriptLoader.loadSubScript(scriptURL, window, "UTF-8");
         } catch (error) {
           console.error("[TaskFix] Failed to inject task window integration", error);
         }
@@ -49,7 +56,7 @@ this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
       this._activated = true;
     }
 
-    for (const window of Services.wm.getEnumerator(null)) {
+    for (const window of windowMediator.getEnumerator(null)) {
       this._inject(window);
     }
   }
@@ -71,7 +78,7 @@ this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
       }
     }
 
-    for (const window of Services.wm.getEnumerator(null)) {
+    for (const window of windowMediator.getEnumerator(null)) {
       try {
         window.__taskfixAddonCleanup?.();
       } catch (error) {
@@ -83,7 +90,7 @@ this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
     this._inject = null;
 
     if (!isAppShutdown) {
-      Services.obs.notifyObservers(null, "startupcache-invalidate");
+      observerService.notifyObservers(null, "startupcache-invalidate");
     }
   }
 

@@ -73,9 +73,6 @@ api_dir.mkdir(parents=True, exist_ok=True)
 var { ExtensionCommon } = ChromeUtils.importESModule(
   "resource://gre/modules/ExtensionCommon.sys.mjs"
 );
-var { Services } = ChromeUtils.importESModule(
-  "resource://gre/modules/Services.sys.mjs"
-);
 var { cal } = ChromeUtils.importESModule(
   "resource:///modules/calendar/calUtils.sys.mjs"
 );
@@ -85,6 +82,11 @@ var { CalTodo } = ChromeUtils.importESModule(
 var { CalTransactionManager } = ChromeUtils.importESModule(
   "resource:///modules/CalTransactionManager.sys.mjs"
 );
+
+const ioService = Cc["@mozilla.org/network/io-service;1"]
+  .getService(Ci.nsIIOService);
+const appInfo = Cc["@mozilla.org/xre/app-info;1"]
+  .getService(Ci.nsIXULAppInfo);
 
 function delay(window, ms) {
   return new Promise(resolve => window.setTimeout(resolve, ms));
@@ -143,7 +145,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
 
           const calendar = cal.manager.createCalendar(
             "memory",
-            Services.io.newURI("moz-memory-calendar://")
+            ioService.newURI("moz-memory-calendar://")
           );
           calendar.name = "TaskFix Real Undo Acceptance";
           calendar.setProperty("calendar-main-default", true);
@@ -295,7 +297,7 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
 
           return {
             ok: true,
-            thunderbirdVersion: Services.appinfo.version,
+            thunderbirdVersion: appInfo.version,
             marker: String(window.__taskfixAddonState?.marker || ""),
             lateTasksPanelActivation: true,
             realTaskTreeMultiSelect: true,

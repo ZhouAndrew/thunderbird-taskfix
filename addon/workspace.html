@@ -23,6 +23,7 @@
     <nav class="tabs">
       <button class="tab active" data-tab="tasks">任务</button>
       <button class="tab" data-tab="events">日历</button>
+      <button class="tab" data-tab="diagnostics">诊断</button>
     </nav>
 
     <section id="tasks-panel" class="panel active">
@@ -101,6 +102,28 @@
           </div>
         </section>
       </div>
+    </section>
+
+    <section id="diagnostics-panel" class="panel" hidden>
+      <section class="card diagnostics-card">
+        <div class="section-title">
+          <div>
+            <h2>0.3.x 生产诊断日志</h2>
+            <p class="muted">记录插件启动、TaskFix 注入、Thunderbird provider CRUD、慢读取和错误；不记录密码或授权字段。</p>
+          </div>
+          <div class="diagnostic-actions">
+            <button id="diagnostics-refresh">刷新</button>
+            <button id="diagnostics-copy">复制</button>
+            <button id="diagnostics-clear" class="danger">清空</button>
+          </div>
+        </div>
+        <div class="diagnostic-meta">
+          <strong>日志文件：</strong>
+          <code id="diagnostics-path">读取中…</code>
+          <span id="diagnostics-size"></span>
+        </div>
+        <pre id="diagnostics-log" class="diagnostics-log">读取中…</pre>
+      </section>
     </section>
   </main>
   <script src="workspace.js"></script>

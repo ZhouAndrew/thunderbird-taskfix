@@ -731,15 +731,25 @@ EOF
 printf 'user_pref("calendar.timezone.local", "%s");\n' "$TB_TIMEZONE" >>"$PROFILE/user.js"
 
 echo "== Start Xvfb =="
-Xvfb :99 -screen 0 1280x1024x24 >"$TMP/xvfb.log" 2>&1 &
+DISPLAY_FILE="$TMP/xvfb-display"
+Xvfb -displayfd 3 -screen 0 1280x1024x24 3>"$DISPLAY_FILE" >"$TMP/xvfb.log" 2>&1 &
 XVFB_PID=$!
-export DISPLAY=:99
-sleep 0.5
-if ! kill -0 "$XVFB_PID" 2>/dev/null; then
-  echo "Xvfb failed to start."
+for _ in $(seq 1 100); do
+  [[ -s "$DISPLAY_FILE" ]] && break
+  if ! kill -0 "$XVFB_PID" 2>/dev/null; then
+    echo "Xvfb failed to start."
+    cat "$TMP/xvfb.log" || true
+    exit 1
+  fi
+  sleep 0.1
+done
+if [[ ! -s "$DISPLAY_FILE" ]]; then
+  echo "Timed out waiting for Xvfb display allocation."
   cat "$TMP/xvfb.log" || true
   exit 1
 fi
+export DISPLAY=":$(tr -d '[:space:]' < "$DISPLAY_FILE")"
+echo "Xvfb ready on $DISPLAY"
 
 echo "== Launch real Thunderbird $TB_VERSION ($TB_TIMEZONE) with the XPI =="
 set +e

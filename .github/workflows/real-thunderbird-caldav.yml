@@ -8,6 +8,7 @@ on:
 
 jobs:
   real-thunderbird:
+    name: real-thunderbird (${{ matrix.thunderbird }}, ${{ matrix.timezone }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -15,6 +16,9 @@ jobs:
         thunderbird:
           - "153.0esr"
           - "153.0.2esr"
+        timezone:
+          - "UTC"
+          - "Asia/Shanghai"
     steps:
       - uses: actions/checkout@v4
 
@@ -29,4 +33,4 @@ jobs:
       - name: Real Thunderbird + real Radicale acceptance
         run: |
           chmod +x tests/real-thunderbird-caldav.sh
-          tests/real-thunderbird-caldav.sh "${{ matrix.thunderbird }}"
+          tests/real-thunderbird-caldav.sh "${{ matrix.thunderbird }}" "${{ matrix.timezone }}"

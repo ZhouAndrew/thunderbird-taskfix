@@ -181,6 +181,9 @@ function eventView(item) {
     workSession:
       String(item.getProperty("X-CALDAV-ASSISTANT-WORK-SESSION") || "").toUpperCase() ===
       "TRUE",
+    workOpen:
+      String(item.getProperty("X-CALDAV-ASSISTANT-WORK-OPEN") || "").toUpperCase() ===
+      "TRUE",
   };
 }
 
@@ -385,6 +388,13 @@ function applyEventChanges(item, changes) {
       item.setProperty("X-CALDAV-ASSISTANT-WORK-SESSION", "TRUE");
     } else {
       item.deleteProperty("X-CALDAV-ASSISTANT-WORK-SESSION");
+    }
+  }
+  if ("workOpen" in changes) {
+    if (changes.workOpen) {
+      item.setProperty("X-CALDAV-ASSISTANT-WORK-OPEN", "TRUE");
+    } else {
+      item.deleteProperty("X-CALDAV-ASSISTANT-WORK-OPEN");
     }
   }
 }

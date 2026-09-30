@@ -161,6 +161,15 @@ global.gTabmail = null;
 global.editToDoStatus = () => { throw new Error("editor path should not be used"); };
 global.editConfigState = () => { throw new Error("editor path should not be used"); };
 
+let undoUpdates = 0;
+const undoCommands = [];
+global.goUpdateCommand = command => {
+  if (command === "cmd_undo") undoUpdates++;
+};
+global.goDoCommand = command => {
+  undoCommands.push(command);
+};
+
 let batchStarts = 0;
 let batchEnds = 0;
 let tx = [];
@@ -191,6 +200,9 @@ global.contextChangeTaskProgress(100);
 assert(tx.length === 3, "completion must modify all three selected ordinary tasks");
 assert(tx.every(x => x[1].isCompleted === true && x[1].percentComplete === 100),
   "every selected ordinary task must be completed");
+assert(undoUpdates > 0, "TaskFix mutations must refresh Thunderbird's native Undo command");
+assert(global.taskfixUndo() === true, "TaskFix must expose native Undo integration");
+assert(undoCommands.at(-1) === "cmd_undo", "TaskFix Undo must delegate to Thunderbird cmd_undo");
 
 tx = [];
 global.contextChangeTaskPriority(1);
@@ -220,6 +232,7 @@ assert(modifiedParent.recurrenceInfo.modified.every(x => x.isCompleted === true)
 global.__taskfixAddonCleanup();
 assert(global.contextChangeTaskProgress === originalProgress, "cleanup must restore original progress handler");
 assert(global.contextChangeTaskPriority === originalPriority, "cleanup must restore original priority handler");
+assert(global.taskfixUndo === undefined, "cleanup must remove TaskFix Undo helper");
 
 assert(batchStarts === batchEnds, "batch transactions must be balanced");
 console.log("taskfix-addon-harness: PASS");

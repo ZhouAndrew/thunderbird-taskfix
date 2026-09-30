@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Thunderbird CalDAV</title>
+  <link rel="stylesheet" href="workspace.css">
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <div>
+        <h1>Thunderbird CalDAV</h1>
+        <p>直接使用 Thunderbird 的 Tasks / Calendar provider</p>
+      </div>
+      <div class="top-actions">
+        <select id="calendar-filter" aria-label="Calendar"></select>
+        <button id="refresh">刷新</button>
+      </div>
+    </header>
+
+    <div id="status" class="status">正在读取 Thunderbird Calendar…</div>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="tasks">任务</button>
+      <button class="tab" data-tab="events">日历</button>
+    </nav>
+
+    <section id="tasks-panel" class="panel active">
+      <div class="layout">
+        <section class="card">
+          <div class="section-title">
+            <h2>VTODO</h2>
+            <span id="task-count"></span>
+          </div>
+          <input id="task-search" type="search" placeholder="筛选任务">
+          <div id="task-list" class="item-list"></div>
+        </section>
+
+        <section class="card editor">
+          <h2 id="task-editor-title">新建任务</h2>
+          <input id="task-id" type="hidden">
+          <label>Calendar<select id="task-calendar"></select></label>
+          <label>标题<input id="task-title" type="text"></label>
+          <label>截止日期<input id="task-due" type="date"></label>
+          <label>状态
+            <select id="task-status">
+              <option value="">Not specified</option>
+              <option value="NEEDS-ACTION">Needs Action</option>
+              <option value="IN-PROCESS">In Progress</option>
+              <option value="COMPLETED">Completed</option>
+              <option value="CANCELLED">Cancelled</option>
+            </select>
+          </label>
+          <label>优先级
+            <select id="task-priority">
+              <option value="0">未指定</option>
+              <option value="1">高</option>
+              <option value="5">普通</option>
+              <option value="9">低</option>
+            </select>
+          </label>
+          <label>Category<input id="task-categories" type="text" placeholder="多个分类用逗号分隔"></label>
+          <label>说明<textarea id="task-description" rows="5"></textarea></label>
+          <div class="editor-actions">
+            <button id="task-new">清空</button>
+            <button id="task-delete" class="danger" hidden>删除</button>
+            <button id="task-save" class="primary">保存</button>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="events-panel" class="panel" hidden>
+      <div class="layout">
+        <section class="card">
+          <div class="section-title">
+            <h2>VEVENT</h2>
+            <span id="event-count"></span>
+          </div>
+          <div class="range">
+            <label>从<input id="event-range-start" type="date"></label>
+            <label>到<input id="event-range-end" type="date"></label>
+            <button id="event-range-apply">读取</button>
+          </div>
+          <div id="event-list" class="item-list"></div>
+        </section>
+
+        <section class="card editor">
+          <h2 id="event-editor-title">新建事件</h2>
+          <input id="event-id" type="hidden">
+          <label>Calendar<select id="event-calendar"></select></label>
+          <label>标题<input id="event-title" type="text"></label>
+          <label>开始<input id="event-start" type="datetime-local"></label>
+          <label>结束<input id="event-end" type="datetime-local"></label>
+          <label>Category<input id="event-categories" type="text" placeholder="多个分类用逗号分隔"></label>
+          <label>说明<textarea id="event-description" rows="5"></textarea></label>
+          <div class="editor-actions">
+            <button id="event-new">清空</button>
+            <button id="event-delete" class="danger" hidden>删除</button>
+            <button id="event-save" class="primary">保存</button>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+  <script src="workspace.js"></script>
+</body>
+</html>

@@ -1,15 +1,15 @@
 {
   "manifest_version": 2,
-  "name": "Thunderbird TaskFix",
-  "description": "Standalone Thunderbird task-list enhancement for reliable recurring-safe multi-select Status, Progress, Category, Priority and completion editing.",
-  "version": "0.2.1",
+  "name": "Thunderbird CalDAV Lab",
+  "description": "Direct Thunderbird Tasks and Calendar workspace. Reads and writes through Thunderbird's own calendar providers; no Native Host or companion CalDAV client.",
+  "version": "0.3.0",
   "author": "ZhouAndrew",
   "background": {
     "scripts": ["background.js"]
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "ZhouAndrew.thunderbird-taskfix@addons.thunderbird.net",
+      "id": "ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net",
       "strict_min_version": "153.0",
       "strict_max_version": "153.*"
     }
@@ -22,6 +22,14 @@
         "paths": [["TaskFix"]],
         "script": "api/TaskFix/implementation.js",
         "events": ["startup"]
+      }
+    },
+    "ThunderbirdCalDAV": {
+      "schema": "api/ThunderbirdCalDAV/schema.json",
+      "parent": {
+        "scopes": ["addon_parent"],
+        "paths": [["ThunderbirdCalDAV"]],
+        "script": "api/ThunderbirdCalDAV/implementation.js"
       }
     }
   }

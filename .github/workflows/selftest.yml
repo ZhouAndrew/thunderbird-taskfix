@@ -13,20 +13,22 @@ jobs:
         run: |
           chmod +x selftest.sh
           ./selftest.sh
-      - name: Standalone add-on syntax and behavior
+      - name: Add-on syntax and existing task behavior
         run: |
           node --check addon/content/taskfix-window.js
           node --check addon/api/TaskFix/implementation.js
+          node --check addon/api/ThunderbirdCalDAV/implementation.js
           node --check addon/background.js
+          node --check addon/workspace.js
           node tests/taskfix-addon-harness.js
-      - name: Build standalone XPI
+      - name: Build direct Thunderbird CalDAV XPI
         run: |
           chmod +x packaging/build-xpi.sh
-          packaging/build-xpi.sh /tmp/thunderbird-taskfix-0.2.1.xpi
-          python3 tests/check-xpi.py /tmp/thunderbird-taskfix-0.2.1.xpi
+          packaging/build-xpi.sh /tmp/thunderbird-caldav-lab-0.3.0.xpi
+          python3 tests/check-xpi.py /tmp/thunderbird-caldav-lab-0.3.0.xpi
       - name: Publish tested XPI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: thunderbird-taskfix-0.2.1
-          path: /tmp/thunderbird-taskfix-0.2.1.xpi
+          name: thunderbird-caldav-lab-0.3.0
+          path: /tmp/thunderbird-caldav-lab-0.3.0.xpi
           if-no-files-found: error

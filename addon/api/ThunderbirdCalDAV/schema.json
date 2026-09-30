@@ -1,0 +1,114 @@
+[
+  {
+    "namespace": "ThunderbirdCalDAV",
+    "description": "Direct access to Thunderbird's own Calendar/Tasks provider layer.",
+    "functions": [
+      {
+        "name": "listCalendars",
+        "type": "function",
+        "async": true,
+        "description": "List enabled and disabled Thunderbird calendars.",
+        "parameters": [],
+        "returns": {"type": "any"}
+      },
+      {
+        "name": "listTasks",
+        "type": "function",
+        "async": true,
+        "description": "Read VTODO items from Thunderbird's calendar providers.",
+        "parameters": [
+          {"name": "calendarId", "type": "string", "optional": true}
+        ],
+        "returns": {"type": "any"}
+      },
+      {
+        "name": "listEvents",
+        "type": "function",
+        "async": true,
+        "description": "Read VEVENT items from Thunderbird's calendar providers.",
+        "parameters": [
+          {"name": "calendarId", "type": "string", "optional": true},
+          {"name": "start", "type": "string", "optional": true},
+          {"name": "end", "type": "string", "optional": true}
+        ],
+        "returns": {"type": "any"}
+      },
+      {
+        "name": "createTask",
+        "type": "function",
+        "async": true,
+        "description": "Create a VTODO through Thunderbird's selected calendar provider.",
+        "parameters": [
+          {"name": "calendarId", "type": "string"},
+          {"name": "values", "type": "any"}
+        ],
+        "returns": {"type": "any"}
+      },
+      {
+        "name": "updateTask",
+        "type": "function",
+        "async": true,
+        "description": "Modify a VTODO through Thunderbird's calendar provider.",
+        "parameters": [
+          {"name": "calendarId", "type": "string"},
+          {"name": "itemId", "type": "string"},
+          {"name": "changes", "type": "any"}
+        ],
+        "returns": {"type": "any"}
+      },
+      {
+        "name": "deleteTask",
+        "type": "function",
+        "async": true,
+        "description": "Delete a VTODO through Thunderbird's calendar provider.",
+        "parameters": [
+          {"name": "calendarId", "type": "string"},
+          {"name": "itemId", "type": "string"}
+        ],
+        "returns": {"type": "any"}
+      },
+      {
+        "name": "createEvent",
+        "type": "function",
+        "async": true,
+        "description": "Create a VEVENT through Thunderbird's selected calendar provider.",
+        "parameters": [
+          {"name": "calendarId", "type": "string"},
+          {"name": "values", "type": "any"}
+        ],
+        "returns": {"type": "any"}
+      },
+      {
+        "name": "updateEvent",
+        "type": "function",
+        "async": true,
+        "description": "Modify a VEVENT through Thunderbird's calendar provider.",
+        "parameters": [
+          {"name": "calendarId", "type": "string"},
+          {"name": "itemId", "type": "string"},
+          {"name": "changes", "type": "any"}
+        ],
+        "returns": {"type": "any"}
+      },
+      {
+        "name": "deleteEvent",
+        "type": "function",
+        "async": true,
+        "description": "Delete a VEVENT through Thunderbird's calendar provider.",
+        "parameters": [
+          {"name": "calendarId", "type": "string"},
+          {"name": "itemId", "type": "string"}
+        ],
+        "returns": {"type": "any"}
+      }
+    ],
+    "events": [
+      {
+        "name": "onItemsChanged",
+        "type": "function",
+        "description": "Fired when Thunderbird calendar items are added, modified, deleted or reloaded.",
+        "parameters": []
+      }
+    ]
+  }
+]

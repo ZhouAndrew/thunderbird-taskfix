@@ -23,3 +23,9 @@ jobs:
           chmod +x packaging/build-xpi.sh
           packaging/build-xpi.sh /tmp/thunderbird-taskfix-0.2.0.xpi
           python3 tests/check-xpi.py /tmp/thunderbird-taskfix-0.2.0.xpi
+      - name: Publish tested XPI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: thunderbird-taskfix-0.2.0
+          path: /tmp/thunderbird-taskfix-0.2.0.xpi
+          if-no-files-found: error

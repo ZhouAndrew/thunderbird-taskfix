@@ -1,0 +1,79 @@
+name: release-taskfix
+
+on:
+  push:
+    branches:
+      - main
+      - "release/taskfix-*"
+    paths:
+      - "addon/**"
+      - "packaging/build-xpi.sh"
+      - "tests/check-xpi.py"
+      - "tests/taskfix-addon-harness.js"
+      - ".github/workflows/release-taskfix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate add-on
+        run: |
+          node --check addon/content/taskfix-window.js
+          node --check addon/api/TaskFix/implementation.js
+          node --check addon/background.js
+          node tests/taskfix-addon-harness.js
+
+      - name: Resolve release identity
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(python3 -c 'import json; print(json.load(open("addon/manifest.json"))["version"])')"
+          if [[ "$GITHUB_REF_NAME" == "main" ]]; then
+            TAG="v$VERSION"
+            PRERELEASE="false"
+          else
+            TAG="v$VERSION-rc.$GITHUB_RUN_NUMBER"
+            PRERELEASE="true"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: Build XPI
+        run: |
+          chmod +x packaging/build-xpi.sh
+          packaging/build-xpi.sh "dist/thunderbird-taskfix-${{ steps.release.outputs.version }}.xpi"
+          python3 tests/check-xpi.py "dist/thunderbird-taskfix-${{ steps.release.outputs.version }}.xpi"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; leaving it unchanged."
+            exit 0
+          fi
+
+          args=(
+            release create "$TAG"
+            "dist/thunderbird-taskfix-$VERSION.xpi"
+            --target "$GITHUB_SHA"
+            --title "Thunderbird TaskFix $TAG"
+            --generate-notes
+          )
+          if [[ "$PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+          gh "${args[@]}"

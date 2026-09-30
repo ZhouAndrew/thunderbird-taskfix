@@ -308,7 +308,7 @@
     } else {
       toolbar.appendChild(button);
       appendLabLog("toolbar-fallback-insertion", {
-        thunderbird: navigator?.userAgent || "",
+        thunderbird: typeof navigator !== "undefined" ? navigator.userAgent : "",
         reason: "task-actions-markcompleted missing",
       });
     }

@@ -3,7 +3,7 @@ set -euo pipefail
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 ADDON="$HERE/addon"
 VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$ADDON/manifest.json")"
-OUT="${1:-$HERE/dist/thunderbird-caldav-lab-$VERSION.xpi}"
+OUT="${1:-$HERE/dist/caldav-assistant-experimental-$VERSION.xpi}"
 mkdir -p "$(dirname "$OUT")"
 rm -f "$OUT"
 (

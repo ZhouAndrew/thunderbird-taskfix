@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Thunderbird CalDAV Lab",
   "description": "Direct Thunderbird Tasks and Calendar workspace. Reads and writes through Thunderbird's own calendar providers; no Native Host or companion CalDAV client.",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "author": "ZhouAndrew",
   "background": {
     "scripts": ["background.js"]

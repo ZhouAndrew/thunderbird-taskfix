@@ -8,6 +8,11 @@ TB_PID=""
 XVFB_PID=""
 REPORT_PID=""
 WM_PID=""
+RUN_TAG="${GITHUB_RUN_ID:-$}-${GITHUB_RUN_ATTEMPT:-1}"
+DB_NAME="caldav-tb-wp-db-${RUN_TAG}"
+WEB_NAME="caldav-tb-wp-web-${RUN_TAG}"
+NET_NAME="caldav-tb-wp-net-${RUN_TAG}"
+VOL_NAME="caldav-tb-wp-data-${RUN_TAG}"
 
 cleanup() {
   set +e
@@ -15,9 +20,11 @@ cleanup() {
   [[ -n "$XVFB_PID" ]] && kill "$XVFB_PID" 2>/dev/null || true
   [[ -n "$REPORT_PID" ]] && kill "$REPORT_PID" 2>/dev/null || true
   [[ -n "$WM_PID" ]] && kill "$WM_PID" 2>/dev/null || true
-  docker rm -f caldav-tb-wp-web caldav-tb-wp-db 2>/dev/null || true
-  docker volume rm caldav-tb-wp-data 2>/dev/null || true
-  docker network rm caldav-tb-wp-net 2>/dev/null || true
+  docker logs "$WEB_NAME" >"$TMP/wordpress-web.log" 2>&1 || true
+  docker logs "$DB_NAME" >"$TMP/wordpress-db.log" 2>&1 || true
+  docker rm -f "$WEB_NAME" "$DB_NAME" 2>/dev/null || true
+  docker volume rm "$VOL_NAME" 2>/dev/null || true
+  docker network rm "$NET_NAME" 2>/dev/null || true
   if [[ -n "${ACCEPTANCE_ARTIFACT_DIR:-}" ]]; then
     mkdir -p "$ACCEPTANCE_ARTIFACT_DIR"
     for candidate in "$TMP/report.json" "$TMP/thunderbird.stdout" "$TMP/thunderbird.stderr" "$TMP/wordpress-web.log" "$TMP/wordpress-db.log" "$TMP/xvfb.log" "$TMP/openbox.log"; do
@@ -29,11 +36,11 @@ cleanup() {
 trap cleanup EXIT
 
 echo "== Start isolated real WordPress =="
-docker network create caldav-tb-wp-net >/dev/null
-docker volume create caldav-tb-wp-data >/dev/null
+docker network create "$NET_NAME" >/dev/null
+docker volume create "$VOL_NAME" >/dev/null
 
-docker run -d --name caldav-tb-wp-db \
-  --network caldav-tb-wp-net \
+docker run -d --name "$DB_NAME" \
+  --network "$NET_NAME" \
   -e MARIADB_DATABASE=wordpress \
   -e MARIADB_USER=wordpress \
   -e MARIADB_PASSWORD=wordpress \
@@ -41,18 +48,18 @@ docker run -d --name caldav-tb-wp-db \
   mariadb:11.4 >/dev/null
 
 for _ in $(seq 1 120); do
-  if docker exec caldav-tb-wp-db mariadb-admin ping -uroot -proot --silent >/dev/null 2>&1; then
+  if docker exec "$DB_NAME" mariadb-admin ping -uroot -proot --silent >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
-docker exec caldav-tb-wp-db mariadb-admin ping -uroot -proot --silent
+docker exec "$DB_NAME" mariadb-admin ping -uroot -proot --silent
 
-docker run -d --name caldav-tb-wp-web \
-  --network caldav-tb-wp-net \
+docker run -d --name "$WEB_NAME" \
+  --network "$NET_NAME" \
   -p 8080:80 \
-  -v caldav-tb-wp-data:/var/www/html \
-  -e WORDPRESS_DB_HOST=caldav-tb-wp-db:3306 \
+  -v "$VOL_NAME":/var/www/html \
+  -e WORDPRESS_DB_HOST="$DB_NAME":3306 \
   -e WORDPRESS_DB_USER=wordpress \
   -e WORDPRESS_DB_PASSWORD=wordpress \
   -e WORDPRESS_DB_NAME=wordpress \
@@ -60,14 +67,14 @@ docker run -d --name caldav-tb-wp-web \
   wordpress:latest >/dev/null
 
 for _ in $(seq 1 120); do
-  if docker exec caldav-tb-wp-web test -f /var/www/html/wp-config.php; then
+  if docker exec "$WEB_NAME" test -f /var/www/html/wp-config.php; then
     break
   fi
   sleep 1
 done
-docker exec caldav-tb-wp-web test -f /var/www/html/wp-config.php
+docker exec "$WEB_NAME" test -f /var/www/html/wp-config.php
 
-WPCLI=(docker run --rm --network caldav-tb-wp-net -v caldav-tb-wp-data:/var/www/html -e WORDPRESS_DB_HOST=caldav-tb-wp-db:3306 -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress wordpress:cli)
+WPCLI=(docker run --rm --network "$NET_NAME" -v "$VOL_NAME":/var/www/html -e WORDPRESS_DB_HOST="$DB_NAME":3306 -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress wordpress:cli)
 "${WPCLI[@]}" --path=/var/www/html core install \
   --url=http://localhost:8080 \
   --title="Thunderbird WordPress Acceptance" \
@@ -83,7 +90,7 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 curl -fsS http://localhost:8080/wp-json/ >/dev/null
-docker exec caldav-tb-wp-web chown -R www-data:www-data /var/www/html
+docker exec "$WEB_NAME" chown -R www-data:www-data /var/www/html
 "${WPCLI[@]}" --path=/var/www/html rewrite structure '/%postname%/' --hard >/dev/null
 "${WPCLI[@]}" --path=/var/www/html rewrite flush --hard >/dev/null
 APP_PASS="$("${WPCLI[@]}" --path=/var/www/html user application-password create wp_user "Thunderbird CI" --porcelain)"
@@ -96,9 +103,17 @@ curl -fsS \
 echo "PASS: real WordPress + real Application Password prepared"
 
 WPCLI_BRIDGE="$TMP/wp-cli-bridge"
-cat >"$WPCLI_BRIDGE" <<'SH'
+cat >"$WPCLI_BRIDGE" <<SH
 #!/usr/bin/env bash
-exec docker run --rm   --user 0:0   --network caldav-tb-wp-net   -v caldav-tb-wp-data:/var/www/html   -v /tmp:/tmp:ro   -e WORDPRESS_DB_HOST=caldav-tb-wp-db:3306   -e WORDPRESS_DB_USER=wordpress   -e WORDPRESS_DB_PASSWORD=wordpress   -e WORDPRESS_DB_NAME=wordpress   wordpress:cli --allow-root "$@"
+exec docker run --rm --user 0:0 \
+  --network "$NET_NAME" \
+  -v "$VOL_NAME":/var/www/html \
+  -v /tmp:/tmp:ro \
+  -e WORDPRESS_DB_HOST="$DB_NAME":3306 \
+  -e WORDPRESS_DB_USER=wordpress \
+  -e WORDPRESS_DB_PASSWORD=wordpress \
+  -e WORDPRESS_DB_NAME=wordpress \
+  wordpress:cli --allow-root "\$@"
 SH
 chmod +x "$WPCLI_BRIDGE"
 "$WPCLI_BRIDGE" --path=/var/www/html core is-installed
@@ -413,5 +428,5 @@ for key in ("quick", "fullWrite", "cleanup", "wpCliQuick", "wpCliFull", "dualDai
 print("REAL THUNDERBIRD + REAL WORDPRESS REST + WP-CLI ACCEPTANCE: PASS")
 PY
 
-docker logs caldav-tb-wp-web >"$TMP/wordpress-web.log" 2>&1 || true
-docker logs caldav-tb-wp-db >"$TMP/wordpress-db.log" 2>&1 || true
+docker logs "$WEB_NAME" >"$TMP/wordpress-web.log" 2>&1 || true
+docker logs "$DB_NAME" >"$TMP/wordpress-db.log" 2>&1 || true

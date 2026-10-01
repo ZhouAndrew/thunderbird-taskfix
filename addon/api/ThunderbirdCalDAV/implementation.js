@@ -6,6 +6,9 @@ var {
 var {
   ExtensionUtils: { ExtensionError },
 } = ChromeUtils.importESModule("resource://gre/modules/ExtensionUtils.sys.mjs");
+var { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
 var { Subprocess } = ChromeUtils.importESModule(
   "resource://gre/modules/Subprocess.sys.mjs"
 );
@@ -182,43 +185,65 @@ async function httpRequestApi(details = {}) {
     headers[String(name)] = String(value);
   }
 
-  let body = null;
-  if (details.bodyBase64) {
-    body = decodeBase64Bytes(details.bodyBase64);
-  } else if (details.bodyText !== undefined && details.bodyText !== null) {
-    body = String(details.bodyText);
-  }
-
   const started = Date.now();
   appendDiagnosticLog("http", "request.start", {
     url,
     method,
     headers,
-    bodyBytes: details.bodyBase64
-      ? Math.floor(String(details.bodyBase64).length * 0.75)
-      : (details.bodyText ? String(details.bodyText).length : 0),
   });
 
   try {
-    const result = await new Promise((resolve, reject) => {
-      const xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
-        .createInstance(Ci.nsIXMLHttpRequest);
-      xhr.open(method, url, true);
-      xhr.mozBackgroundRequest = true;
-      for (const [name, value] of Object.entries(headers)) {
-        xhr.setRequestHeader(name, value);
+    const channel = NetUtil.newChannel({
+      uri: url,
+      loadUsingSystemPrincipal: true,
+    }).QueryInterface(Ci.nsIHttpChannel);
+
+    if (method !== "GET" && method !== "HEAD" &&
+        (details.bodyBase64 || details.bodyText !== undefined && details.bodyText !== null)) {
+      const stream = Cc["@mozilla.org/io/string-input-stream;1"]
+        .createInstance(Ci.nsIStringInputStream);
+      if (details.bodyBase64) {
+        const binary = atob(String(details.bodyBase64));
+        stream.setData(binary, binary.length);
+      } else {
+        stream.setUTF8Data(String(details.bodyText));
       }
-      xhr.onload = () => resolve({
-        ok: xhr.status >= 200 && xhr.status < 300,
-        status: Number(xhr.status || 0),
-        statusText: String(xhr.statusText || ""),
-        url: String(xhr.responseURL || url),
-        text: String(xhr.responseText || ""),
+      const contentType = Object.entries(headers)
+        .find(([name]) => name.toLowerCase() === "content-type")?.[1]
+        || "application/octet-stream";
+      channel.QueryInterface(Ci.nsIUploadChannel2)
+        .explicitSetUploadStream(stream, String(contentType), -1, method, false);
+    } else {
+      channel.requestMethod = method;
+    }
+
+    for (const [name, value] of Object.entries(headers)) {
+      if (name.toLowerCase() === "content-length") continue;
+      channel.setRequestHeader(name, value, false);
+    }
+
+    const result = await new Promise((resolve, reject) => {
+      NetUtil.asyncFetch(channel, (stream, status, request) => {
+        if (!Components.isSuccessCode(status)) {
+          reject(new Error("network status " + status));
+          return;
+        }
+        const http = request.QueryInterface(Ci.nsIHttpChannel);
+        const count = stream.available();
+        const text = count
+          ? NetUtil.readInputStreamToString(stream, count, {
+              charset: "UTF-8",
+              replacement: 0xfffd,
+            })
+          : "";
+        resolve({
+          ok: http.responseStatus >= 200 && http.responseStatus < 300,
+          status: Number(http.responseStatus || 0),
+          statusText: String(http.responseStatusText || ""),
+          url: String(http.URI?.spec || url),
+          text,
+        });
       });
-      xhr.onerror = () => reject(new Error("network request failed"));
-      xhr.ontimeout = () => reject(new Error("network request timed out"));
-      xhr.timeout = 30000;
-      xhr.send(method === "GET" || method === "HEAD" ? null : body);
     });
 
     appendDiagnosticLog("http", "request.success", {

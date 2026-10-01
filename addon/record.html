@@ -18,18 +18,12 @@
 
   <div class="tool-grid">
     <section class="card">
+      <p class="muted">每次只追加一条到今天的 WordPress 日志；只有今天还没有日志文章时才会自动创建。</p>
       <div class="form-grid">
-        <label>标题<input id="title"></label>
-        <label>正文<textarea id="content"></textarea></label>
-        <label>状态
-          <select id="post-status">
-            <option value="draft">Draft</option>
-            <option value="publish">Publish</option>
-          </select>
-        </label>
+        <label>日志内容<textarea id="content"></textarea></label>
         <label>附件<input id="files" type="file" multiple></label>
       </div>
-      <div class="tool-actions"><button id="submit">写入 WordPress</button></div>
+      <div class="tool-actions"><button id="submit">追加日志</button></div>
     </section>
 
     <section class="card">

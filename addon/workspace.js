@@ -186,6 +186,7 @@ $("cancel-confirm-yes").addEventListener("click", async () => {
 });
 
 browser.ThunderbirdCalDAV.onItemsChanged.addListener(() => {
+  if (actionRunning) return;
   clearTimeout(window.__caldavAssistantRefresh);
   window.__caldavAssistantRefresh = setTimeout(refreshAll, 250);
 });

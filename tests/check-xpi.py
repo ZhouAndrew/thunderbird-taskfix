@@ -116,11 +116,13 @@ with zipfile.ZipFile(path) as z:
     assert 'view === "completed"' in workspace
     assert 'view === "overdue"' in workspace
     assert "打开设置" in workspace
+    assert "browser.storage.onChanged" in workspace
 
     # One simple persistence function freezes log-before-display order.
     assert "persistResult" in storage
     assert "saveSettingsWithUndo" in storage
     assert "undoSettings" in storage
+    assert "snapshot.keys" in storage
     assert 'persistResult(receipt, "workflow")' in executor
     assert 'persistResult(result, "connection")' in connection
     assert 'persistResult(result, "wordpress")' in wordpress
@@ -132,6 +134,8 @@ with zipfile.ZipFile(path) as z:
     assert "undo-settings" in tools_html
     assert "saveSettingsWithUndo" in tools
     assert "undoSettings" in tools
+    assert "previous: changed.previous" not in tools
+    assert "details: {restored}" not in tools
     assert "Calendar 完整读写" in tools_html
     assert "WordPress 完整读写" in tools_html
     assert "No VTODO was created" in connection

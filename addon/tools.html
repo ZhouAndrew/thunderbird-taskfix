@@ -45,6 +45,11 @@
         <label>WordPress URL<input id="wp-url" placeholder="https://andrew.local"></label>
         <label>WordPress 用户名<input id="wp-user"></label>
         <label>Application Password<input id="wp-password" type="password"></label>
+        <label class="checkbox-row">
+          <input id="wp-allow-untrusted-tls" type="checkbox">
+          允许本地 HTTPS 忽略证书校验（仅 .local / localhost / 私有 IP）
+        </label>
+        <p class="muted">仍使用 HTTPS 加密，但不验证服务器证书身份。仅用于你明确知道并信任的本地 WordPress；默认关闭。</p>
         <label>WordPress 本地路径<input id="wp-path" placeholder="/var/www/html/wordpress"></label>
         <label>WP-CLI 命令 / 包装脚本<input id="wp-cli" placeholder="wp 或 /usr/local/bin/wp"></label>
         <label>旧 WP-CLI helper 目录<input id="wp-helper-dir" placeholder="~/bin"></label>

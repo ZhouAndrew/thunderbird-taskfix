@@ -182,7 +182,7 @@ async function httpRequestApi(details = {}) {
     headers[String(name)] = String(value);
   }
 
-  let body;
+  let body = null;
   if (details.bodyBase64) {
     body = decodeBase64Bytes(details.bodyBase64);
   } else if (details.bodyText !== undefined && details.bodyText !== null) {
@@ -200,31 +200,34 @@ async function httpRequestApi(details = {}) {
   });
 
   try {
-    // This code runs in the privileged Experiment parent scope. Keeping the
-    // request here avoids Thunderbird 152/153 WebExtension-page CORS regressions
-    // while still using Thunderbird's normal TLS/certificate stack.
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: method === "GET" || method === "HEAD" ? undefined : body,
-      credentials: "omit",
-      redirect: "follow",
-      cache: "no-store",
+    const result = await new Promise((resolve, reject) => {
+      const xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
+        .createInstance(Ci.nsIXMLHttpRequest);
+      xhr.open(method, url, true);
+      xhr.mozBackgroundRequest = true;
+      for (const [name, value] of Object.entries(headers)) {
+        xhr.setRequestHeader(name, value);
+      }
+      xhr.onload = () => resolve({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: Number(xhr.status || 0),
+        statusText: String(xhr.statusText || ""),
+        url: String(xhr.responseURL || url),
+        text: String(xhr.responseText || ""),
+      });
+      xhr.onerror = () => reject(new Error("network request failed"));
+      xhr.ontimeout = () => reject(new Error("network request timed out"));
+      xhr.timeout = 30000;
+      xhr.send(method === "GET" || method === "HEAD" ? null : body);
     });
-    const text = await response.text();
+
     appendDiagnosticLog("http", "request.success", {
       url,
       method,
-      status: response.status,
+      status: result.status,
       durationMs: Date.now() - started,
     });
-    return {
-      ok: response.ok,
-      status: response.status,
-      statusText: response.statusText,
-      url: response.url || url,
-      text,
-    };
+    return result;
   } catch (error) {
     appendDiagnosticLog("http", "request.error", {
       url,

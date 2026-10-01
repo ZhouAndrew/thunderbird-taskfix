@@ -1,8 +1,8 @@
 # CalDAV Assistant Experimental
 
-Current build: **0.3.9** for official Thunderbird **153.0.2 through 153.1.x**.
+Current build: **0.3.10** for official Thunderbird **153.0.2 through 153.1.x**.
 
-0.3.9 keeps the 0.3.8 fallback and gives Thunderbird-native REST one final conservative retry after NS_ERROR_NET_RESET, disabling advanced HTTP negotiation when supported before falling back. The add-on remains a direct Thunderbird Calendar/Tasks provider client; the normal user experience is a small task workflow.
+0.3.10 keeps the 0.3.9 REST diagnostics and adds an explicit, default-off option to use REST over local HTTPS while skipping certificate verification. The bypass is restricted to .local, localhost, loopback and private LAN IPv4 addresses and does not change Thunderbird's global TLS settings. The add-on remains a direct Thunderbird Calendar/Tasks provider client; the normal user experience is a small task workflow.
 
 ## Work page
 

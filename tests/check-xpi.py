@@ -137,11 +137,21 @@ with zipfile.ZipFile(path) as z:
     assert "No VTODO was created" in connection
     assert "AssistantConnection.fullCalendarWriteTest" in tools
 
-    # WordPress result keeps concrete IDs while full detail is in Logs.
-    assert 'status: "draft"' in wordpress
-    assert "read-back WordPress post" in wordpress
-    assert "Post ID" in z.read("record.js").decode()
-    assert "Media ID" in z.read("record.js").decode()
+    # WordPress Record appends one entry to one daily post; per-entry title/status
+    # fields must not return to the simple UI.
+    record_html = z.read("record.html").decode()
+    record_js = z.read("record.js").decode()
+    assert 'id="title"' not in record_html
+    assert 'id="post-status"' not in record_html
+    assert "每次只追加一条" in record_html
+    assert "追加日志" in record_html
+    assert "dailyLogTitle" in wordpress
+    assert "ensureDailyLogPost" in wordpress
+    assert "append + read-back daily WordPress log" in wordpress
+    assert "wordpress.append-log" in wordpress
+    assert "今日日志" in record_js
+    assert "Post ID" in record_js
+    assert "Media ID" in record_js
 
     assert "AssistantStorage.listAudit" in logs
     assert "ExtensionUtils" in direct and "ExtensionError" in direct

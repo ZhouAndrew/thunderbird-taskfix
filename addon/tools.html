@@ -37,7 +37,7 @@
         </label>
         <label>WordPress 连接方式
           <select id="wp-transport">
-            <option value="auto">自动（有 Application Password 时用 REST，否则 WP-CLI）</option>
+            <option value="auto">自动（优先 REST；网络失败时回退 WP-CLI）</option>
             <option value="application-password">Application Password / REST</option>
             <option value="wp-cli">WP-CLI（兼容旧脚本）</option>
           </select>

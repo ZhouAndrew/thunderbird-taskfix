@@ -1,32 +1,37 @@
 # CalDAV Assistant Experimental
 
-Current build: **0.3.10** for official Thunderbird **153.0.2 through 153.1.x**.
+Current build: **0.3.11** for official Thunderbird **153.0.2 through 153.1.x**.
 
-0.3.10 keeps the 0.3.9 REST diagnostics and adds an explicit, default-off option to use REST over local HTTPS while skipping certificate verification. The bypass is restricted to .local, localhost, loopback and private LAN IPv4 addresses and does not change Thunderbird's global TLS settings. The add-on remains a direct Thunderbird Calendar/Tasks provider client; the normal user experience is a small task workflow.
+0.3.11 keeps the 0.3.10 connection behavior and splits the overloaded Work flow into stable, explicit stages. The Work page now shows only the current Task. Task browsing and selection live on a separate Task picker page. Switching is deliberately two-step: put the current Task aside, then explicitly start the selected Task. The add-on remains a direct Thunderbird Calendar/Tasks provider client.
 
-## Work page
+## Work flow
 
-The Work page consumes existing VTODOs. Its default view is **Incomplete**, so completed/cancelled history stays available without filling the normal work list. The compact view selector can switch to Today, Overdue, Completed or All.
+The Work page is intentionally small. It shows only the current Task, elapsed time and direct controls:
 
-A compact Calendar selector uses Thunderbird's existing Calendar list. The persistent default is configured under Tools; changing the selector on Work is only a temporary view choice.
+- Working Task: Pause / Complete / Cancel / Switch Task.
+- Paused Task: Resume / Complete / Cancel / Switch Task.
+- No current Task: Select Task.
 
-The Work page consumes existing VTODOs:
+Task browsing is a separate page. The Task picker owns the Incomplete/Today/Overdue/Completed/All filter, Calendar filter and search field.
 
-select Task -> Start -> Working -> Pause/Resume -> Complete or Cancel
+Starting and switching are kept explicit:
 
-It does not create Tasks.
+```text
+Select Task
+-> Start this Task
+-> Work
 
-Before selection: no workflow buttons.
+Switch Task
+-> select target
+-> Put current Task aside
+-> target selection stays in place
+-> Start this Task
+-> Work
+```
 
-Selected idle Task: Start only.
+Putting a Task aside is not the same as completing it. The current VTODO remains `STATUS:IN-PROCESS` with the Assistant paused marker, its open Work VEVENT is closed and verified, and the runtime current-task pointer is released. The target Task is not auto-started.
 
-Working Task: Pause / Complete / Cancel.
-
-Paused Task: Resume / Complete / Cancel.
-
-Completed or cancelled Task: no workflow buttons.
-
-The Work page does **not** show UID, raw VTODO state, internal Assistant state, Work Calendar selectors, provider IDs, or JSON details.
+The Work page does **not** contain the Task browser, filter controls, detailed operation logs, UID, raw VTODO state, internal Assistant state, Work Calendar selectors, provider IDs, or JSON details.
 
 ## Five pages
 
@@ -53,7 +58,7 @@ Inferred Work Calendar choices are one-shot only; the Assistant no longer silent
 
 The core is plain functions plus a few plain JavaScript objects. There is no extra workflow framework or class hierarchy.
 
-`core/executor.js` exposes Start/Pause/Resume/Complete/Cancel functions.
+`core/executor.js` exposes Start/Pause/PutAside/Resume/Complete/Cancel functions.
 
 `core/connection.js` tests Calendar reads/writes.
 

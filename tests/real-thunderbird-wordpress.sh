@@ -186,6 +186,63 @@ chmod +x "$WPCLI_BRIDGE"
 "$WPCLI_BRIDGE" --path=/var/www/html core is-installed
 echo "PASS: host-callable WP-CLI bridge prepared"
 
+HELPER_DIR="$TMP/legacy-wordpress-helpers"
+HELPER_USED="$TMP/legacy-helper-used.log"
+mkdir -p "$HELPER_DIR"
+
+cat >"$HELPER_DIR/find-today-post.sh" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+echo find >>"$HELPER_USED"
+month_full="$(date +%B)"
+month_abbr="$(date +%b)"
+day="$((10#$(date +%d)))"
+weekday="$(date +%A)"
+year="$(date +%Y)"
+"$WPCLI_BRIDGE" --path=/var/www/html post list \
+  --post_type=post --post_status=any \
+  --fields=ID,post_title --format=json |
+python3 - "$month_full" "$month_abbr" "$day" "$weekday" "$year" <<'PY'
+import json, re, sys
+month_full, month_abbr, day, weekday, year = sys.argv[1:]
+items = json.load(sys.stdin)
+for item in items:
+    title = str(item.get("post_title") or "")
+    folded = title.casefold()
+    if (
+        (month_full.casefold() in folded or month_abbr.casefold() in folded)
+        and re.search(rf"(?<!\d){re.escape(day)}(?!\d)", title)
+        and weekday.casefold() in folded
+        and year in title
+    ):
+        print(item["ID"])
+        raise SystemExit(0)
+print(f"No post found for today (must contain: {month_full}/{month_abbr}, {day}, {weekday}, {year})")
+PY
+SH
+
+cat >"$HELPER_DIR/create-post.sh" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+echo create >>"$HELPER_USED"
+existing="$("$HELPER_DIR/find-today-post.sh")"
+if [[ "$existing" =~ ^[0-9]+$ ]]; then
+  echo "✔ Today's post exists: $existing"
+  exit 0
+fi
+month_full="$(date +%B)"
+day="$((10#$(date +%d)))"
+weekday="$(date +%A)"
+year="$(date +%Y)"
+post_title="$month_full $day  $weekday  $year"
+post_id="$("$WPCLI_BRIDGE" --path=/var/www/html post create \
+  --post_type=post --post_status=publish \
+  --post_title="$post_title" --porcelain)"
+echo "✔ Created today's post: $post_id"
+SH
+chmod +x "$HELPER_DIR/find-today-post.sh" "$HELPER_DIR/create-post.sh"
+echo "PASS: legacy find-today-post.sh/create-post.sh fixture prepared"
+
 echo "== Build production and instrumented XPI =="
 chmod +x "$ROOT/packaging/build-xpi.sh"
 "$ROOT/packaging/build-xpi.sh" "$TMP/base.xpi"
@@ -193,7 +250,7 @@ python3 "$ROOT/tests/check-xpi.py" "$TMP/base.xpi"
 mkdir -p "$TMP/addon"
 (cd "$TMP/addon" && unzip -q "$TMP/base.xpi")
 
-python3 - "$TMP/addon" "$APP_PASS" "$WPCLI_BRIDGE" "$WP_BASE_URL" <<'PY'
+python3 - "$TMP/addon" "$APP_PASS" "$WPCLI_BRIDGE" "$WP_BASE_URL" "$HELPER_DIR" <<'PY'
 from pathlib import Path
 import json
 import sys
@@ -202,6 +259,7 @@ root = Path(sys.argv[1])
 app_password = sys.argv[2]
 wp_cli_executable = sys.argv[3]
 wp_base_url = sys.argv[4]
+helper_dir = sys.argv[5]
 manifest_path = root / "manifest.json"
 manifest = json.loads(manifest_path.read_text())
 permissions = manifest.setdefault("permissions", [])
@@ -288,18 +346,11 @@ async function __runRealWordPressAcceptance() {
     throw new Error("full test did not verify media read-back");
   }
 
-  const restLog = await AssistantWordPress.createLog({
-    content: "THUNDERBIRD REAL REST DAILY LOG",
-    files: [],
-  });
-  if (!restLog.success || !restLog.post?.id) {
-    throw new Error("REST daily log failed: " + (restLog.summary || JSON.stringify(restLog)));
-  }
-
   await AssistantWordPress.saveConfig({
     transport: "wp-cli",
     wordpressPath: "/var/www/html",
     wpCliCommand: __WP_CLI_EXECUTABLE__,
+    legacyHelperDir: __WP_HELPER_DIR__,
   });
 
   const cliQuick = await AssistantWordPress.quickTest();
@@ -316,10 +367,28 @@ async function __runRealWordPressAcceptance() {
     content: "THUNDERBIRD REAL WPCLI DAILY LOG",
     files: [],
   });
-  if (!cliLog.success || cliLog.post?.id !== restLog.post.id) {
+  if (!cliLog.success || !cliLog.post?.id) {
+    throw new Error("WP-CLI daily log failed: " + (cliLog.summary || JSON.stringify(cliLog)));
+  }
+
+  await AssistantWordPress.saveConfig({
+    transport: "application-password",
+    baseUrl: __WP_BASE_URL__,
+    username: "wp_user",
+    applicationPassword: __WP_APP_PASSWORD__,
+    wordpressPath: "/var/www/html",
+    wpCliCommand: __WP_CLI_EXECUTABLE__,
+    legacyHelperDir: __WP_HELPER_DIR__,
+  });
+
+  const restLog = await AssistantWordPress.createLog({
+    content: "THUNDERBIRD REAL REST DAILY LOG",
+    files: [],
+  });
+  if (!restLog.success || restLog.post?.id !== cliLog.post.id) {
     throw new Error(
-      "REST/WP-CLI daily log mismatch: " +
-      JSON.stringify({rest: restLog.post, cli: cliLog.post, summary: cliLog.summary})
+      "WP-CLI/REST daily log mismatch: " +
+      JSON.stringify({cli: cliLog.post, rest: restLog.post, summary: restLog.summary})
     );
   }
 
@@ -344,7 +413,8 @@ setTimeout(() => {
 }, 500);
 '''.replace("__WP_APP_PASSWORD__", json.dumps(app_password))
    .replace("__WP_CLI_EXECUTABLE__", json.dumps(wp_cli_executable))
-   .replace("__WP_BASE_URL__", json.dumps(wp_base_url)) + "\n")
+   .replace("__WP_BASE_URL__", json.dumps(wp_base_url))
+   .replace("__WP_HELPER_DIR__", json.dumps(helper_dir)) + "\n")
 
 background = root / "background.js"
 background.write_text(background.read_text() + r'''
@@ -498,6 +568,13 @@ for key in ("quick", "fullWrite", "cleanup", "wpCliQuick", "wpCliFull", "dualDai
     assert data.get(key) is True, (key, data)
 print("REAL THUNDERBIRD + REAL WORDPRESS REST + WP-CLI ACCEPTANCE: PASS")
 PY
+
+grep -qx 'find' "$HELPER_USED"
+grep -qx 'create' "$HELPER_USED" || grep -q '^create "$CADDY_NAME" >"$TMP/caddy.log" 2>&1 || true
+docker logs "$WEB_NAME" >"$TMP/wordpress-web.log" 2>&1 || true
+docker logs "$DB_NAME" >"$TMP/wordpress-db.log" 2>&1 || true
+ "$HELPER_USED"
+echo "PASS: legacy find-today-post.sh and create-post.sh were really executed"
 
 docker logs "$CADDY_NAME" >"$TMP/caddy.log" 2>&1 || true
 docker logs "$WEB_NAME" >"$TMP/wordpress-web.log" 2>&1 || true

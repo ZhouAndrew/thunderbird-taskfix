@@ -68,6 +68,12 @@ with zipfile.ZipFile(path) as z:
     assert "X-CALDAV-ASSISTANT-PAUSED" in direct
     assert "X-CALDAV-ASSISTANT-TASK-UID" in direct
     assert "X-CALDAV-ASSISTANT-WORK-SESSION" in direct
+    assert "caldav-assistant-experimental.log" in direct
+    assert "diagnosticsInfo" in direct
+    assert "readDiagnostics" in direct
+    assert "clearDiagnostics" in direct
+    assert "writeDiagnostic" in direct
+    assert "loggedMutation" in direct
     assert "X-CALDAV-ASSISTANT-WORK-OPEN" in direct
     assert "browser.ThunderbirdCalDAV" in workspace
     assert "AssistantExecutor.start" in workspace

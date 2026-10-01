@@ -5,6 +5,7 @@ on:
     branches:
       - "rewrite/direct-thunderbird-caldav"
       - "feat/caldav-assistant-workflow-*"
+      - "feat/caldav-assistant-simple-*"
   pull_request:
 
 jobs:

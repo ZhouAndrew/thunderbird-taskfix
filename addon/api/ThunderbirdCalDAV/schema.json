@@ -304,6 +304,21 @@
         "returns": {
           "type": "any"
         }
+      },
+      {
+        "name": "runWordPressHelper",
+        "type": "function",
+        "async": true,
+        "description": "Run one supported legacy WordPress helper script (find-today-post.sh or create-post.sh) when present.",
+        "parameters": [
+          {
+            "name": "details",
+            "type": "any"
+          }
+        ],
+        "returns": {
+          "type": "any"
+        }
       }
     ],
     "events": [

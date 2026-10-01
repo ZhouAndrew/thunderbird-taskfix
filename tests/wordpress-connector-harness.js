@@ -135,6 +135,17 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
     applicationPassword: "secret-app-password",
   });
 
+  await AssistantStorage.saveSettingsWithUndo({taskView: "completed"});
+  assert(
+    !JSON.stringify(local["caldavAssistant.settingsUndo"]).includes("secret-app-password"),
+    "settings undo duplicated the WordPress application password"
+  );
+  await AssistantStorage.undoSettings();
+  assert(
+    (await AssistantStorage.getSettings()).wordpress?.applicationPassword === "secret-app-password",
+    "targeted settings undo damaged unrelated WordPress configuration"
+  );
+
   const quick = await AssistantWordPress.quickTest();
   assert(quick.success, "WordPress quick test failed");
   assert(quick.logSaved === true, "WordPress quick result was not persistently logged");

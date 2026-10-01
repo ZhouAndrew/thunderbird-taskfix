@@ -23,6 +23,7 @@
       wpCliCommand: String(
         config?.wpCliCommand || config?.wpCliExecutable || "wp"
       ).trim() || "wp",
+      legacyHelperDir: String(config?.legacyHelperDir || "~/bin").trim(),
     };
   }
 

@@ -48,6 +48,7 @@ async function saveWordPressFromForm() {
     baseUrl: $("wp-url").value,
     username: $("wp-user").value,
     applicationPassword: $("wp-password").value,
+    allowUntrustedTls: $("wp-allow-untrusted-tls").checked,
     wordpressPath: $("wp-path").value,
     wpCliCommand: $("wp-cli").value,
     legacyHelperDir: $("wp-helper-dir").value,
@@ -149,6 +150,7 @@ async function load() {
   $("wp-url").value = wp.baseUrl || "";
   $("wp-user").value = wp.username || "";
   $("wp-password").value = wp.applicationPassword || "";
+  $("wp-allow-untrusted-tls").checked = Boolean(wp.allowUntrustedTls);
   $("wp-path").value = wp.wordpressPath || "/var/www/html/wordpress";
   $("wp-cli").value = wp.wpCliCommand || "wp";
   $("wp-helper-dir").value = wp.legacyHelperDir || "~/bin";

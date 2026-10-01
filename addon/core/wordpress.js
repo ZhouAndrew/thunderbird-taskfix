@@ -317,7 +317,7 @@
       : restRequest(config, path, options);
   }
 
-  async function ensurePermission() {
+  async function validateTransportConfig() {
     const config = await getConfig();
     const transport = selectedTransport(config);
     if (transport === "application-password") {
@@ -340,8 +340,7 @@
       summary: "",
     };
     try {
-      const permitted = await ensurePermission();
-      if (!permitted) throw new Error("WordPress host permission was not granted.");
+      await validateTransportConfig();
       const started = performance.now();
       const user = await request("/users/me?context=edit");
       result.steps.push({
@@ -406,8 +405,7 @@
     let postId = null;
     let mediaId = null;
     try {
-      const permitted = await ensurePermission();
-      if (!permitted) throw new Error("WordPress host permission was not granted.");
+      await validateTransportConfig();
       const marker = `CALDAV-ASSISTANT-TEST-${Date.now()}`;
       const post = await request("/posts", {
         method: "POST",
@@ -655,8 +653,7 @@
         throw new Error("日志内容或附件不能为空。");
       }
 
-      const permitted = await ensurePermission();
-      if (!permitted) throw new Error("WordPress host permission was not granted.");
+      await validateTransportConfig();
 
       const daily = await ensureDailyLogPost();
       const postId = daily.post.id;
@@ -732,7 +729,6 @@
   globalThis.AssistantWordPress = Object.freeze({
     getConfig,
     saveConfig,
-    ensurePermission,
     quickTest,
     fullWriteTest,
     createLog,

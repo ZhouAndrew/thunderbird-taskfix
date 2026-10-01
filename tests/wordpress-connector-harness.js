@@ -22,6 +22,37 @@ global.browser = {
   permissions: {
     async contains() { return true; },
   },
+  ThunderbirdCalDAV: {
+    async httpRequest(details = {}) {
+      const headers = new Headers(details.headers || {});
+      let body = details.bodyText ?? undefined;
+      if (details.bodyBase64) {
+        body = Uint8Array.from(Buffer.from(details.bodyBase64, "base64"));
+      }
+      const response = await global.fetch(details.url, {
+        method: details.method || "GET",
+        headers,
+        body,
+      });
+      return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        url: response.url || details.url,
+        text: await response.text(),
+      };
+    },
+    async runWpCli(details = {}) {
+      const args = details.args || [];
+      if (args[0] === "core" && args[1] === "is-installed") {
+        return {exitCode: 0, stdout: "", stderr: ""};
+      }
+      if (args[0] === "option" && args[1] === "get" && args[2] === "blogname") {
+        return {exitCode: 0, stdout: "Acceptance WP\n", stderr: ""};
+      }
+      return {exitCode: 1, stdout: "", stderr: "unexpected mocked wp command: " + args.join(" ")};
+    },
+  },
 };
 
 let nextPost = 100;
@@ -145,8 +176,27 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
   );
 
   const quick = await AssistantWordPress.quickTest();
-  assert(quick.success, "WordPress quick test failed after explicit permission grant");
+  assert(quick.success, "WordPress REST quick test failed");
+  assert(quick.transport === "application-password", "auto transport did not select Application Password");
   assert(quick.logSaved === true, "WordPress quick result was not persistently logged");
+
+  await AssistantWordPress.saveConfig({
+    transport: "wp-cli",
+    wordpressPath: "/var/www/html/wordpress",
+    wpCliExecutable: "wp",
+  });
+  const cliQuick = await AssistantWordPress.quickTest();
+  assert(cliQuick.success, "WordPress WP-CLI quick test failed");
+  assert(cliQuick.transport === "wp-cli", "explicit WP-CLI transport was not selected");
+
+  await AssistantWordPress.saveConfig({
+    transport: "application-password",
+    baseUrl: "http://example.test/wordpress/",
+    username: "acceptance",
+    applicationPassword: "secret-app-password",
+    wordpressPath: "/var/www/html/wordpress",
+    wpCliExecutable: "wp",
+  });
 
   const firstAuditWrite = storageWrites.indexOf("caldavAssistant.audit");
   const firstReceiptWrite = storageWrites.indexOf("caldavAssistant.lastReceipt");
@@ -208,7 +258,7 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
   const dailyContent = dailyPost?.content?.raw || "";
   const title = firstLog.post.title || "";
   assert(
-    /^[A-Za-z]+ \d{1,2}  [A-Za-z]+  \d{4}$/.test(title),
+    /^[A-Za-z]+ \d{1,2} [A-Za-z]+ \d{4}$/.test(title),
     "new daily WordPress post title no longer matches the existing helper format"
   );
   assert(dailyContent.includes("Completed work."), "first log entry was lost");

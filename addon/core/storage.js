@@ -2,6 +2,7 @@
 
 (() => {
   const KEY_SETTINGS = "caldavAssistant.settings";
+  const KEY_SETTINGS_UNDO = "caldavAssistant.settingsUndo";
   const KEY_RUNTIME = "caldavAssistant.runtime";
   const KEY_AUDIT = "caldavAssistant.audit";
   const KEY_RECEIPT = "caldavAssistant.lastReceipt";
@@ -36,6 +37,30 @@
     const current = await getSettings();
     const next = {...current, ...(patch || {})};
     return setValue(KEY_SETTINGS, next);
+  }
+
+  async function saveSettingsWithUndo(patch) {
+    const previous = await getSettings();
+    const next = {...previous, ...(patch || {})};
+    await setValue(KEY_SETTINGS_UNDO, {
+      previous,
+      next,
+      timestamp: nowIso(),
+    });
+    await setValue(KEY_SETTINGS, next);
+    return {previous, next};
+  }
+
+  async function getSettingsUndo() {
+    return getValue(KEY_SETTINGS_UNDO, null);
+  }
+
+  async function undoSettings() {
+    const snapshot = await getSettingsUndo();
+    if (!snapshot || !snapshot.previous) return null;
+    await setValue(KEY_SETTINGS, snapshot.previous);
+    await setValue(KEY_SETTINGS_UNDO, null);
+    return snapshot.previous;
   }
 
   async function getRuntime() {
@@ -130,6 +155,9 @@
   globalThis.AssistantStorage = Object.freeze({
     getSettings,
     saveSettings,
+    saveSettingsWithUndo,
+    getSettingsUndo,
+    undoSettings,
     getRuntime,
     setRuntime,
     clearRuntime,

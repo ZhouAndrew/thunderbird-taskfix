@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>选择 Task · CalDAV Assistant</title>
+  <link rel="stylesheet" href="workspace.css">
+</head>
+<body>
+  <main>
+    <header class="app-header">
+      <h1>CalDAV Assistant</h1>
+    </header>
+
+    <nav class="tool-nav" aria-label="CalDAV Assistant">
+      <a class="active" href="workspace.html">工作</a>
+      <a href="today.html">今天</a>
+      <a href="record.html">记录</a>
+      <a href="logs.html">日志</a>
+      <a href="tools.html">工具</a>
+    </nav>
+
+    <div class="subpage-head">
+      <a href="workspace.html">← 返回当前工作</a>
+      <h2>选择 Task</h2>
+    </div>
+
+    <div id="notice" class="notice" hidden></div>
+
+    <section id="current-strip" class="current-strip" hidden>
+      <span id="current-strip-text"></span>
+      <a href="workspace.html">查看</a>
+    </section>
+
+    <div class="work-layout">
+      <section class="card task-browser">
+        <div class="task-filters">
+          <select id="task-view" aria-label="Task 视图">
+            <option value="incomplete">未完成</option>
+            <option value="today">今天</option>
+            <option value="overdue">已逾期</option>
+            <option value="completed">已完成</option>
+            <option value="all">全部</option>
+          </select>
+          <select id="task-calendar-filter" aria-label="Task Calendar"></select>
+        </div>
+        <input id="task-search" type="search" placeholder="搜索 Task">
+        <div id="task-list" class="item-list"></div>
+      </section>
+
+      <section class="card task-panel">
+        <div id="no-selection" class="empty-state">请选择一个 Task</div>
+
+        <div id="selection" hidden>
+          <h2 id="selected-title"></h2>
+          <div id="selected-state" class="task-state"></div>
+          <div id="selected-due" class="task-secondary"></div>
+          <div id="actions" class="action-row"></div>
+          <p id="flow-note" class="muted"></p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="core/storage.js"></script>
+  <script src="core/executor.js"></script>
+  <script src="task-picker.js"></script>
+</body>
+</html>

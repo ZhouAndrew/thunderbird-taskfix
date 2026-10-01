@@ -20,7 +20,9 @@
       username: String(config?.username || "").trim(),
       applicationPassword: String(config?.applicationPassword || "").replace(/\s+/g, ""),
       wordpressPath: String(config?.wordpressPath || "/var/www/html/wordpress").trim(),
-      wpCliExecutable: String(config?.wpCliExecutable || "wp").trim() || "wp",
+      wpCliCommand: String(
+        config?.wpCliCommand || config?.wpCliExecutable || "wp"
+      ).trim() || "wp",
     };
   }
 
@@ -127,6 +129,52 @@
     return data;
   }
 
+  function splitCommandLine(value) {
+    const text = String(value || "").trim();
+    if (!text) return ["wp"];
+
+    const parts = [];
+    let current = "";
+    let quote = "";
+    let escaped = false;
+
+    for (const char of text) {
+      if (escaped) {
+        current += char;
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (quote) {
+        if (char === quote) quote = "";
+        else current += char;
+        continue;
+      }
+      if (char === "'" || char === '"') {
+        quote = char;
+        continue;
+      }
+      if (/\s/.test(char)) {
+        if (current) {
+          parts.push(current);
+          current = "";
+        }
+        continue;
+      }
+      current += char;
+    }
+
+    if (escaped || quote) {
+      throw new Error("WP-CLI command has an unfinished escape or quote.");
+    }
+    if (current) parts.push(current);
+    if (!parts.length) throw new Error("WP-CLI command is empty.");
+    return parts;
+  }
+
   async function wpCliRun(config, args, {blob = null, filename = ""} = {}) {
     const bridge = browser.ThunderbirdCalDAV?.runWpCli;
     if (typeof bridge !== "function") {
@@ -139,8 +187,10 @@
       tempFileBase64 = bytesToBase64(bytes);
     }
 
+    const command = splitCommandLine(config.wpCliCommand);
     const result = await bridge({
-      executable: config.wpCliExecutable,
+      executable: command[0],
+      prefixArgs: command.slice(1),
       wordpressPath: config.wordpressPath,
       args,
       tempFileName: filename,

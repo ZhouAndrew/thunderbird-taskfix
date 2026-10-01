@@ -427,6 +427,49 @@
     });
   }
 
+  async function putAside(task) {
+    return runAction("put-aside", task, async receipt => {
+      ensureMutableTask(task);
+      const runtime = await AssistantStorage.getRuntime();
+      if (!sameTask(runtime, task) || !["working", "paused"].includes(runtime.state)) {
+        throw new Error("The selected task is not the current task.");
+      }
+
+      const beforeTask = taskSnapshot(task);
+      let eventClosed = false;
+      let taskWritten = false;
+
+      try {
+        if (runtime.state === "working" && runtime.currentWorkEvent) {
+          eventClosed = true;
+          await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
+        }
+
+        taskWritten = true;
+        await updateAndVerifyTask(
+          task,
+          {status: "IN-PROCESS", paused: true},
+          {status: "IN-PROCESS", paused: true},
+          receipt
+        );
+
+        await AssistantStorage.clearRuntime();
+        step(receipt, "Runtime", "release current task", true, {
+          state: "idle",
+          taskUid: task.id,
+        });
+        step(receipt, "WordPress", "not invoked", true, {
+          note: "Putting a task aside does not create a WordPress post.",
+        });
+      } catch (error) {
+        if (taskWritten) await restoreTask(task, beforeTask, receipt);
+        if (eventClosed) await reopenWorkEvent(runtime.currentWorkEvent, receipt);
+        await restoreRuntime(runtime, receipt);
+        throw error;
+      }
+    });
+  }
+
   async function resume(task, workCalendarId) {
     return runAction("resume", task, async receipt => {
       ensureMutableTask(task);
@@ -516,6 +559,7 @@
   globalThis.AssistantExecutor = Object.freeze({
     start,
     pause,
+    putAside,
     resume,
     complete: task => finish(task, "COMPLETED"),
     cancel: task => finish(task, "CANCELLED"),

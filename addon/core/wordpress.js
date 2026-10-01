@@ -107,15 +107,7 @@
       result.steps.push({name: "WordPress read", success: false, error: errorText(error)});
     }
     result.completedAt = new Date().toISOString();
-    await AssistantStorage.saveLastReceipt(result);
-    await AssistantStorage.appendAudit({
-      scope: "connection",
-      action: result.action,
-      success: result.success,
-      summary: result.summary,
-      details: result,
-    });
-    return result;
+    return AssistantStorage.persistResult(result, "connection");
   }
 
   function pngBlob() {
@@ -235,15 +227,7 @@
     }
 
     result.completedAt = new Date().toISOString();
-    await AssistantStorage.saveLastReceipt(result);
-    await AssistantStorage.appendAudit({
-      scope: "connection",
-      action: result.action,
-      success: result.success,
-      summary: result.summary,
-      details: result,
-    });
-    return result;
+    return AssistantStorage.persistResult(result, "connection");
   }
 
   async function createLog({title, content, status = "draft", files = []}) {
@@ -315,15 +299,7 @@
     }
 
     result.completedAt = new Date().toISOString();
-    await AssistantStorage.saveLastReceipt(result);
-    await AssistantStorage.appendAudit({
-      scope: "wordpress",
-      action: result.action,
-      success: result.success,
-      summary: result.summary,
-      details: result,
-    });
-    return result;
+    return AssistantStorage.persistResult(result, "wordpress");
   }
 
   globalThis.AssistantWordPress = Object.freeze({

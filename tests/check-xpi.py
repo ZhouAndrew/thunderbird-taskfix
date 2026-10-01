@@ -149,6 +149,12 @@ with zipfile.ZipFile(path) as z:
     assert "ensureDailyLogPost" in wordpress
     assert "append + read-back daily WordPress log" in wordpress
     assert "wordpress.append-log" in wordpress
+    assert "currentTimeText" in wordpress
+    assert "mediaBlock" in wordpress
+    assert "wp:image" in wordpress
+    assert "wp:video" in wordpress
+    assert "wp:audio" in wordpress
+    assert "wp:file" in wordpress
     assert "今日日志" in record_js
     assert "Post ID" in record_js
     assert "Media ID" in record_js

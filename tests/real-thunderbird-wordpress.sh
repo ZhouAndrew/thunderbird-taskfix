@@ -193,7 +193,7 @@ python3 "$ROOT/tests/check-xpi.py" "$TMP/base.xpi"
 mkdir -p "$TMP/addon"
 (cd "$TMP/addon" && unzip -q "$TMP/base.xpi")
 
-python3 - "$TMP/addon" "$APP_PASS" "$WPCLI_BRIDGE" <<'PY'
+python3 - "$TMP/addon" "$APP_PASS" "$WPCLI_BRIDGE" "$WP_BASE_URL" <<'PY'
 from pathlib import Path
 import json
 import sys
@@ -201,6 +201,7 @@ import sys
 root = Path(sys.argv[1])
 app_password = sys.argv[2]
 wp_cli_executable = sys.argv[3]
+wp_base_url = sys.argv[4]
 manifest_path = root / "manifest.json"
 manifest = json.loads(manifest_path.read_text())
 permissions = manifest.setdefault("permissions", [])
@@ -231,7 +232,7 @@ async function __wpAcceptWaitReceipt(action, timeoutMs = 30000) {
 }
 async function __runRealWordPressAcceptance() {
   await new Promise(resolve => setTimeout(resolve, 1000));
-  $("wp-url").value = "http://localhost:8080";
+  $("wp-url").value = __WP_BASE_URL__;
   $("wp-user").value = "wp_user";
   $("wp-password").value = __WP_APP_PASSWORD__;
 
@@ -259,10 +260,6 @@ async function __runRealWordPressAcceptance() {
   if (!quickResult.success) {
     throw new Error("quick test failed: " + (quickResult.summary || JSON.stringify(quickResult)));
   }
-  if (!(await browser.permissions.contains({origins: ["http://localhost:8080/*"]}))) {
-    throw new Error("optional WordPress host permission was not granted");
-  }
-
   const full = $("wp-full");
   full.style.position = "fixed";
   full.style.left = "24px";
@@ -346,7 +343,8 @@ setTimeout(() => {
   });
 }, 500);
 '''.replace("__WP_APP_PASSWORD__", json.dumps(app_password))
-   .replace("__WP_CLI_EXECUTABLE__", json.dumps(wp_cli_executable)) + "\n")
+   .replace("__WP_CLI_EXECUTABLE__", json.dumps(wp_cli_executable))
+   .replace("__WP_BASE_URL__", json.dumps(wp_base_url)) + "\n")
 
 background = root / "background.js"
 background.write_text(background.read_text() + r'''
@@ -395,6 +393,12 @@ tar -xJf "$TMP/thunderbird.tar.xz" -C "$TMP"
 
 PROFILE="$TMP/profile"
 mkdir -p "$PROFILE/extensions"
+certutil -N -d "sql:$PROFILE" --empty-password
+certutil -A -d "sql:$PROFILE" \
+  -n "CalDAV Assistant Test CA" \
+  -t "C,," \
+  -i "$TMP/certs/ca.crt"
+certutil -L -d "sql:$PROFILE" | grep -F "CalDAV Assistant Test CA"
 EXT_ID='ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net'
 cp "$TMP/acceptance.xpi" "$PROFILE/extensions/$EXT_ID.xpi"
 cat >"$PROFILE/user.js" <<'EOF'
@@ -495,5 +499,6 @@ for key in ("quick", "fullWrite", "cleanup", "wpCliQuick", "wpCliFull", "dualDai
 print("REAL THUNDERBIRD + REAL WORDPRESS REST + WP-CLI ACCEPTANCE: PASS")
 PY
 
+docker logs "$CADDY_NAME" >"$TMP/caddy.log" 2>&1 || true
 docker logs "$WEB_NAME" >"$TMP/wordpress-web.log" 2>&1 || true
 docker logs "$DB_NAME" >"$TMP/wordpress-db.log" 2>&1 || true

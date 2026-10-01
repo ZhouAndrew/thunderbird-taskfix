@@ -1,39 +1,94 @@
-# CalDAV Assistant Experimental 0.3.5 — module boundaries
+# CalDAV Assistant Experimental 0.3.6 — simple program boundary
 
-## Work / workflow
+The design goal is deliberately ordinary: a small UI, a set of plain functions, a few plain objects, strict read-back checks, and persistent logs.
 
-workspace.html + workspace.js only shows existing VTODOs and moves one selected Task through:
+## Work
 
-select existing Task -> Start -> Working -> Pause/Resume -> Complete or Cancel
+`workspace.html + workspace.js` only does this:
 
-Rules: the Work page does not create Tasks; no Task selected means no workflow buttons; Pause and Resume never appear together; full Task/Assistant state remains visible; the latest result is a persistent receipt rather than a disappearing popup.
+existing Task -> select -> Start -> Working -> Pause/Resume -> Complete or Cancel
 
-## Executor
+Rules:
 
-core/executor.js performs Start, Pause, Resume, Complete and Cancel. Data-changing steps follow write -> read back -> compare -> receipt. Start/Resume create Work VEVENTs; Pause/Complete/Cancel close them. Paused state uses X-CALDAV-ASSISTANT-PAUSED. Work VEVENTs carry X-CALDAV-ASSISTANT-WORK-SESSION and X-CALDAV-ASSISTANT-TASK-UID.
+- the Work page never creates a Task;
+- before a Task is selected there are no workflow buttons;
+- only actions valid for the current state are shown;
+- completed/cancelled Tasks show no workflow buttons;
+- UID, raw VTODO status, Work Calendar, provider IDs and JSON details do not appear on the Work page;
+- the Work page keeps only a short human-readable recent result.
 
-## Connection / diagnostics
+## Plain action functions
 
-connections.html + core/connection.js + core/wordpress.js test external paths. Calendar quick test reads calendars and existing VTODOs. Calendar full test creates only a temporary TEST VEVENT, reads it, updates it, reads it again, deletes it and verifies absence. It deliberately creates no VTODO.
+`core/executor.js` is intentionally a file of plain functions. It does not define a class hierarchy or workflow framework.
 
-WordPress full test authenticates, creates a temporary Draft post, reads/updates/reads it, uploads/reads temporary media, then deletes the media and test post.
+The public operations are:
 
-## Recorder / audit
+- `start(task, workCalendarId)`
+- `pause(task)`
+- `resume(task, workCalendarId)`
+- `complete(task)`
+- `cancel(task)`
 
-core/storage.js + logs.html persist timestamp, scope, action, success/failure and full structured receipt. Logs are an independent page. Passwords are configuration data and must never be copied into audit records.
+Data-changing paths use:
 
-## Independent tools
+write -> read back -> compare -> Result
 
-Work = lifecycle only.
-Record = explicit WordPress long-form logging and attachments.
-Today = today's workflow activity.
-Connections = provider/network diagnostics.
-Logs = persistent detailed audit.
+Start/Resume create Work VEVENTs. Pause/Complete/Cancel close the current Work VEVENT. Rollback code exists only where a partial remote write could otherwise leave inconsistent data.
 
-## WordPress rule
+## Small data objects
 
-Completing a Task does not automatically create a WordPress post. If WordPress is not invoked, the workflow receipt says so. When Record creates a post, the receipt shows Post ID, status, URL, Media IDs, parent Post IDs and read-back verification.
+Runtime data is ordinary JavaScript objects:
 
-## Acceptance rule
+- Task view
+- Work event reference
+- Runtime state
+- Result/receipt
+- Settings
 
-Success is not 'the API call did not throw'. For paths that support read-back, success means write -> read back -> compare -> permanent receipt. Real Thunderbird + real Radicale acceptance must drive Start -> Pause -> Resume -> Complete on an already existing VTODO, verify Work VEVENT lifecycle and persistent audit, restart the same profile, and leave no test data behind.
+There is no domain class hierarchy.
+
+## Logging rule
+
+Every user-visible success/failure result is sent to `AssistantStorage.persistResult()` before the function returns it to the UI.
+
+That function attempts:
+
+Result -> append persistent audit -> cache latest Result -> return to UI
+
+If the persistent audit write fails, `logSaved=false` and the UI must say so instead of pretending the result was safely logged.
+
+The Logs page owns full technical detail. The Work page only shows a short result plus a link to Logs.
+
+## Tools
+
+`tools.html` owns settings and connection tests.
+
+Calendar full test:
+
+temporary TEST VEVENT -> read -> update -> read -> delete -> verify absence
+
+It never creates a VTODO.
+
+WordPress full test:
+
+temporary Draft Post -> read -> update -> read -> temporary media -> read -> delete media -> delete post
+
+## WordPress
+
+`record.html` explicitly creates long-form WordPress records. Completing a Task does not implicitly create a WordPress Post.
+
+The visible result reports concrete Post ID / Media ID values; the full request/result record stays in Logs.
+
+## Data ownership
+
+- Thunderbird/CalDAV = Task and Event facts.
+- browser.storage.local = small Assistant runtime/settings/audit state only.
+- WordPress = explicit long-form records.
+
+## Top-level UI
+
+Exactly five ordinary pages:
+
+Work | Today | Record | Logs | Tools
+
+The internal implementation may have supporting files, but those are not additional user workflows.

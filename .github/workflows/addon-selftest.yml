@@ -1,0 +1,46 @@
+name: addon-selftest
+
+on:
+  push:
+    paths:
+      - "addon/**"
+      - "packaging/build-xpi.sh"
+      - "tests/check-xpi.py"
+      - "tests/taskfix-addon-harness.js"
+      - "tests/taskfix-late-panel-harness.js"
+      - ".github/workflows/addon-selftest.yml"
+  pull_request:
+    paths:
+      - "addon/**"
+      - "packaging/build-xpi.sh"
+      - "tests/check-xpi.py"
+      - "tests/taskfix-addon-harness.js"
+      - "tests/taskfix-late-panel-harness.js"
+      - ".github/workflows/addon-selftest.yml"
+
+jobs:
+  taskfix-addon:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax and behavior
+        run: |
+          node --check addon/content/taskfix-window.js
+          node --check addon/api/TaskFix/implementation.js
+          node --check addon/background.js
+          node tests/taskfix-addon-harness.js
+          node tests/taskfix-late-panel-harness.js
+      - name: Build standalone XPI
+        id: package
+        run: |
+          VERSION="$(python3 -c 'import json; print(json.load(open("addon/manifest.json"))["version"])')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          chmod +x packaging/build-xpi.sh
+          packaging/build-xpi.sh "/tmp/thunderbird-taskfix-$VERSION.xpi"
+          python3 tests/check-xpi.py "/tmp/thunderbird-taskfix-$VERSION.xpi"
+      - name: Publish tested XPI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: thunderbird-taskfix-${{ steps.package.outputs.version }}
+          path: /tmp/thunderbird-taskfix-${{ steps.package.outputs.version }}.xpi
+          if-no-files-found: error

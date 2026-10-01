@@ -1,0 +1,40 @@
+# Release-gating convention: see TESTING.md. A stable TaskFix release must not bypass this real GUI acceptance.
+name: real-thunderbird-taskfix-undo
+
+on:
+  push:
+    branches:
+      - "release/taskfix-*"
+    paths:
+      - "addon/**"
+      - "packaging/build-xpi.sh"
+      - "tests/check-xpi.py"
+      - "tests/real-thunderbird-taskfix-undo.sh"
+      - ".github/workflows/real-thunderbird-taskfix-undo.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "addon/**"
+      - "packaging/build-xpi.sh"
+      - "tests/check-xpi.py"
+      - "tests/real-thunderbird-taskfix-undo.sh"
+      - ".github/workflows/real-thunderbird-taskfix-undo.yml"
+  workflow_dispatch:
+
+jobs:
+  real-thunderbird-taskfix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Xvfb
+        run: |
+          if ! command -v xvfb-run >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          fi
+      - name: Real Thunderbird 153.1.0esr late-load + batch Undo/Redo acceptance
+        run: |
+          chmod +x tests/real-thunderbird-taskfix-undo.sh
+          tests/real-thunderbird-taskfix-undo.sh 153.1.0esr

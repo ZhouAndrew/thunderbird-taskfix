@@ -1,0 +1,82 @@
+# Thunderbird TaskFix XPI
+
+Current standalone build: 0.3.3 for official Thunderbird 153.x.
+
+This is a standalone Thunderbird enhancement add-on. It does not patch or replace Thunderbird application files and has no dependency on any companion application.
+
+## 0.3.3
+
+- Removes the early-startup dependency on `resource://gre/modules/Services.sys.mjs` from the privileged TaskFix Experiment API.
+- Uses Thunderbird/XPCOM services directly for script loading, window enumeration and startup-cache invalidation.
+- This fixes the case where TaskFix could fail during cold Thunderbird startup and only become active after manually reloading the extension.
+- Adds a real Thunderbird 153.1.0esr acceptance run that starts with Tasks closed for more than 15 seconds, then opens Tasks, performs a two-task batch Status change, and verifies Calendar Undo/Redo through both keyboard and command-controller paths.
+
+## 0.3.2
+
+- Fixes Undo in the real Thunderbird Tasks UI.
+- TaskFix 0.3.0/0.3.1 incorrectly delegated its helper to the generic `goDoCommand("cmd_undo")`, which can resolve to Thunderbird's mail/editor undo stack instead of the Calendar transaction stack.
+- TaskFix now calls Thunderbird Calendar's native `undo()` / `redo()` path, which uses `CalTransactionManager`.
+- Adds a narrow Ctrl+Z / Ctrl+Shift+Z bridge while a Tasks tree is visible; editable text fields keep their normal text-editor undo.
+- The bridge is removed cleanly when TaskFix is disabled/uninstalled.
+
+## 0.3.1
+
+- Fixes a startup regression in 0.3.0 where TaskFix stopped looking for Thunderbird's lazily-created Tasks panel after 15 seconds.
+- Keeps a DOM readiness observer until the real Tasks toolbar exists, so opening Tasks later still activates Status and the multi-select handlers.
+- Requires both the Tasks toolbar and Mark Completed insertion point before installing, avoiding partial-DOM races.
+- Adds a regression test for delayed Tasks-panel creation.
+
+## 0.3.0
+
+- Adds native Undo support for TaskFix edits.
+- Every multi-select Status, Progress, Category, Priority or completion change remains inside Thunderbird's own transaction manager.
+- A TaskFix batch is kept as one Thunderbird batch transaction, so **Edit → Undo** / **Ctrl+Z** rolls back the most recent batch as one operation.
+- After each TaskFix mutation the native `cmd_undo` command state is refreshed; TaskFix does not maintain a competing private undo stack.
+- Cleanup removes the TaskFix Undo bridge together with the other injected helpers.
+
+## 0.2.1
+
+- Standalone add-on identity and packaging; no `apply.sh` is needed for normal use.
+- Explicit background activation calls the Experiment API after install/startup, while the Experiment startup hook remains as a fallback.
+- Existing Thunderbird main windows are injected immediately; future main windows are handled by the registered window listener.
+- Resolves the real selected rows from the active task tree, including Ctrl/Shift multi-selection.
+- Recurring-safe batch mutation core groups selected occurrences by recurring parent before committing changes.
+- Adds a complete Status menu in both the task toolbar and task right-click context menu.
+- Status values: Not specified, Needs Action, In Progress, Completed, Cancelled.
+- Multi-select Mark Completed / Progress uses the same recurring-safe batch core.
+- Multi-select Category uses the same recurring-safe batch core.
+- Multi-select Priority is also routed through the recurring-safe batch core.
+- Delete remains Thunderbird's native delete command because Thunderbird already receives the complete selected task list and owns recurrence/deletion confirmation semantics.
+- Disabling or uninstalling this add-on restores the original Thunderbird functions and removes injected menus.
+
+## Release policy
+
+TaskFix does **not** release on a calendar schedule.
+
+A stable GitHub Release is published **once each time a version has passed automated checks and real Thunderbird human-path acceptance and is declared stable**.
+
+- Development and acceptance builds may be published as prereleases / RCs.
+- RCs are not stable releases.
+- Merging an accepted stable version to `main` triggers the stable release workflow.
+- No weekly, biweekly, or monthly release cadence is required.
+
+## Testing convention
+
+The project-wide real-GUI testing note is in [`TESTING.md`](../TESTING.md).
+
+The TaskFix 0.3.3 reference acceptance was completed on official Thunderbird 153.1.0esr and covers delayed Tasks-panel activation, real task-tree multi-selection, one two-item Calendar batch transaction, direct Undo/Redo, Ctrl+Z / Ctrl+Shift+Z, and Edit-menu Undo/Redo.
+
+This is now a release convention: every stable TaskFix release must pass the real Thunderbird GUI acceptance path in addition to ordinary automated tests and package checks. A failed or incomplete real-GUI run keeps the build at RC / prerelease status.
+
+## Acceptance checklist
+
+1. Install the XPI into an unmodified official Thunderbird 153.x profile.
+2. Ctrl/Shift-select 3 ordinary tasks.
+3. Mark Completed: all 3 must become completed.
+4. Change Status to Cancelled, Needs Action, In Progress and Completed: every selected task must change.
+5. Change Category: every selected task must change and mixed-category selection must be handled.
+6. Change Priority: every selected task must change.
+7. Repeat completion/status/category/priority tests with multiple selected occurrences of one recurring VTODO.
+8. Delete multiple selected tasks with Thunderbird's native Delete button and verify the normal confirmation/recurrence behavior.
+9. Sync, restart Thunderbird, and verify persistence.
+10. Disable/uninstall the extension and verify the original Thunderbird UI/handlers are restored.

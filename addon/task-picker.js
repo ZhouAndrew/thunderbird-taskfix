@@ -1,6 +1,8 @@
 "use strict";
 
 const $ = id => document.getElementById(id);
+let actionRunning = false;
+
 const state = {
   calendars: [],
   tasks: [],
@@ -248,6 +250,7 @@ async function runPutAside() {
   const current = taskByRef(state.runtime?.currentTask);
   if (!target || !current) return;
 
+  actionRunning = true;
   $("actions").querySelectorAll("button").forEach(button => { button.disabled = true; });
   let receipt;
   try {
@@ -256,18 +259,24 @@ async function runPutAside() {
     receipt = await persistUiFailure("put-aside", current, error);
   }
 
+  // Keep the user's target choice across provider notifications from putting
+  // the current Task aside. The steps remain separate; this does not start it.
+  state.selected = target;
+  await refreshAll(true);
+  actionRunning = false;
+
   if (receipt.success) {
     showNotice("已换下当前 Task。现在可以开始“" + (target.title || "(无标题)") + "”。");
   } else {
     showNotice(receipt.error || receipt.summary || "换下当前 Task 失败。", true);
   }
-  await refreshAll(true);
 }
 
 async function runStart() {
   const task = state.selected;
   if (!task) return;
 
+  actionRunning = true;
   $("actions").querySelectorAll("button").forEach(button => { button.disabled = true; });
   let receipt;
   try {
@@ -280,8 +289,11 @@ async function runStart() {
     window.location.href = "workspace.html";
     return;
   }
-  showNotice(receipt.error || receipt.summary || "开始 Task 失败。", true);
+
+  state.selected = task;
   await refreshAll(true);
+  actionRunning = false;
+  showNotice(receipt.error || receipt.summary || "开始 Task 失败。", true);
 }
 
 async function refreshAll(preserveSelection = true) {
@@ -338,6 +350,7 @@ $("task-calendar-filter").addEventListener("change", event => {
 });
 
 browser.ThunderbirdCalDAV.onItemsChanged.addListener(() => {
+  if (actionRunning) return;
   clearTimeout(window.__caldavAssistantRefresh);
   window.__caldavAssistantRefresh = setTimeout(() => refreshAll(true), 250);
 });

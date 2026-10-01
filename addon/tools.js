@@ -49,7 +49,7 @@ async function saveWordPressFromForm() {
     username: $("wp-user").value,
     applicationPassword: $("wp-password").value,
     wordpressPath: $("wp-path").value,
-    wpCliExecutable: $("wp-cli").value,
+    wpCliCommand: $("wp-cli").value,
   });
 }
 
@@ -149,7 +149,7 @@ async function load() {
   $("wp-user").value = wp.username || "";
   $("wp-password").value = wp.applicationPassword || "";
   $("wp-path").value = wp.wordpressPath || "/var/www/html/wordpress";
-  $("wp-cli").value = wp.wpCliExecutable || "wp";
+  $("wp-cli").value = wp.wpCliCommand || "wp";
 
   $("undo-settings").hidden = !(await AssistantStorage.getSettingsUndo());
 

@@ -187,6 +187,106 @@ function decodeBase64Binary(value) {
   return output;
 }
 
+function shouldRetryHttpConservatively(url, error) {
+  if (!/^https:\/\//i.test(String(url || ""))) return false;
+  const text = String(error?.message || error || "");
+  return /network status 2152398868|NS_ERROR_NET_RESET|network reset/i.test(text);
+}
+
+function applyConservativeHttpMode(channel) {
+  const applied = {
+    allowSpdy: null,
+    allowAltSvc: null,
+    beConservative: null,
+    allowHttp3: null,
+  };
+
+  try {
+    const internal = channel.QueryInterface(Ci.nsIHttpChannelInternal);
+    if ("allowSpdy" in internal) {
+      internal.allowSpdy = false;
+      applied.allowSpdy = false;
+    }
+    if ("allowAltSvc" in internal) {
+      internal.allowAltSvc = false;
+      applied.allowAltSvc = false;
+    }
+    if ("beConservative" in internal) {
+      internal.beConservative = true;
+      applied.beConservative = true;
+    }
+    if ("allowHttp3" in internal) {
+      internal.allowHttp3 = false;
+      applied.allowHttp3 = false;
+    }
+  } catch (error) {
+    applied.error = String(error?.message || error);
+  }
+
+  return applied;
+}
+
+async function httpRequestAttempt({url, method, headers, details, conservative = false}) {
+  const channel = NetUtil.newChannel({
+    uri: url,
+    loadUsingSystemPrincipal: true,
+  }).QueryInterface(Ci.nsIHttpChannel);
+
+  const conservativeState = conservative
+    ? applyConservativeHttpMode(channel)
+    : null;
+
+  if (method !== "GET" && method !== "HEAD" &&
+      (details.bodyBase64 || details.bodyText !== undefined && details.bodyText !== null)) {
+    const stream = Cc["@mozilla.org/io/string-input-stream;1"]
+      .createInstance(Ci.nsIStringInputStream);
+    if (details.bodyBase64) {
+      const binary = decodeBase64Binary(details.bodyBase64);
+      stream.setByteStringData(binary);
+    } else {
+      stream.setUTF8Data(String(details.bodyText));
+    }
+    const contentType = Object.entries(headers)
+      .find(([name]) => name.toLowerCase() === "content-type")?.[1]
+      || "application/octet-stream";
+    channel.QueryInterface(Ci.nsIUploadChannel2)
+      .explicitSetUploadStream(stream, String(contentType), -1, method, false);
+  } else {
+    channel.requestMethod = method;
+  }
+
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() === "content-length") continue;
+    channel.setRequestHeader(name, value, false);
+  }
+
+  const result = await new Promise((resolve, reject) => {
+    NetUtil.asyncFetch(channel, (stream, status, request) => {
+      if (!Components.isSuccessCode(status)) {
+        reject(new Error("network status " + status));
+        return;
+      }
+      const http = request.QueryInterface(Ci.nsIHttpChannel);
+      const count = stream.available();
+      const text = count
+        ? NetUtil.readInputStreamToString(stream, count, {
+            charset: "UTF-8",
+            replacement: 0xfffd,
+          })
+        : "";
+      resolve({
+        ok: http.responseStatus >= 200 && http.responseStatus < 300,
+        status: Number(http.responseStatus || 0),
+        statusText: String(http.responseStatusText || ""),
+        url: String(http.URI?.spec || url),
+        text,
+      });
+    });
+  });
+
+  return {result, conservativeState};
+}
+
 async function httpRequestApi(details = {}) {
   const url = String(details.url || "").trim();
   if (!/^https?:\/\//i.test(url)) {
@@ -203,80 +303,78 @@ async function httpRequestApi(details = {}) {
   appendDiagnosticLog("http", "request.start", {
     url,
     method,
+    mode: "normal",
     headers,
   });
 
   try {
-    const channel = NetUtil.newChannel({
-      uri: url,
-      loadUsingSystemPrincipal: true,
-    }).QueryInterface(Ci.nsIHttpChannel);
-
-    if (method !== "GET" && method !== "HEAD" &&
-        (details.bodyBase64 || details.bodyText !== undefined && details.bodyText !== null)) {
-      const stream = Cc["@mozilla.org/io/string-input-stream;1"]
-        .createInstance(Ci.nsIStringInputStream);
-      if (details.bodyBase64) {
-        const binary = decodeBase64Binary(details.bodyBase64);
-        stream.setByteStringData(binary);
-      } else {
-        stream.setUTF8Data(String(details.bodyText));
-      }
-      const contentType = Object.entries(headers)
-        .find(([name]) => name.toLowerCase() === "content-type")?.[1]
-        || "application/octet-stream";
-      channel.QueryInterface(Ci.nsIUploadChannel2)
-        .explicitSetUploadStream(stream, String(contentType), -1, method, false);
-    } else {
-      channel.requestMethod = method;
-    }
-
-    for (const [name, value] of Object.entries(headers)) {
-      if (name.toLowerCase() === "content-length") continue;
-      channel.setRequestHeader(name, value, false);
-    }
-
-    const result = await new Promise((resolve, reject) => {
-      NetUtil.asyncFetch(channel, (stream, status, request) => {
-        if (!Components.isSuccessCode(status)) {
-          reject(new Error("network status " + status));
-          return;
-        }
-        const http = request.QueryInterface(Ci.nsIHttpChannel);
-        const count = stream.available();
-        const text = count
-          ? NetUtil.readInputStreamToString(stream, count, {
-              charset: "UTF-8",
-              replacement: 0xfffd,
-            })
-          : "";
-        resolve({
-          ok: http.responseStatus >= 200 && http.responseStatus < 300,
-          status: Number(http.responseStatus || 0),
-          statusText: String(http.responseStatusText || ""),
-          url: String(http.URI?.spec || url),
-          text,
-        });
-      });
+    const first = await httpRequestAttempt({
+      url,
+      method,
+      headers,
+      details,
+      conservative: false,
     });
-
     appendDiagnosticLog("http", "request.success", {
       url,
       method,
-      status: result.status,
+      mode: "normal",
+      status: first.result.status,
       durationMs: Date.now() - started,
     });
-    return result;
-  } catch (error) {
+    return first.result;
+  } catch (firstError) {
     appendDiagnosticLog("http", "request.error", {
       url,
       method,
+      mode: "normal",
       durationMs: Date.now() - started,
-      error,
+      error: firstError,
     });
-    throw new ExtensionError(
-      "Privileged HTTP request failed: " + String(error?.message || error)
-    );
+
+    if (!shouldRetryHttpConservatively(url, firstError)) {
+      throw new ExtensionError(
+        "Privileged HTTP request failed: " + String(firstError?.message || firstError)
+      );
+    }
+
+    const retryStarted = Date.now();
+    appendDiagnosticLog("http", "request.retry-conservative", {
+      url,
+      method,
+      reason: String(firstError?.message || firstError),
+    });
+
+    try {
+      const retry = await httpRequestAttempt({
+        url,
+        method,
+        headers,
+        details,
+        conservative: true,
+      });
+      appendDiagnosticLog("http", "request.success", {
+        url,
+        method,
+        mode: "conservative",
+        status: retry.result.status,
+        durationMs: Date.now() - retryStarted,
+        conservativeState: retry.conservativeState,
+      });
+      return retry.result;
+    } catch (retryError) {
+      appendDiagnosticLog("http", "request.error", {
+        url,
+        method,
+        mode: "conservative",
+        durationMs: Date.now() - retryStarted,
+        error: retryError,
+      });
+      throw new ExtensionError(
+        "Privileged HTTP request failed after conservative retry: " +
+        String(retryError?.message || retryError)
+      );
+    }
   }
 }
 

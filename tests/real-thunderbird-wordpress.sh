@@ -47,13 +47,22 @@ docker run -d --name "$DB_NAME" \
   -e MARIADB_ROOT_PASSWORD=root \
   mariadb:11.4 >/dev/null
 
+DB_READY=0
 for _ in $(seq 1 120); do
   if docker exec "$DB_NAME" mariadb-admin ping -uroot -proot --silent >/dev/null 2>&1; then
+    DB_READY=1
+    break
+  fi
+  if [[ "$(docker inspect -f '{{.State.Running}}' "$DB_NAME" 2>/dev/null || true)" != "true" ]]; then
     break
   fi
   sleep 1
 done
-docker exec "$DB_NAME" mariadb-admin ping -uroot -proot --silent
+if [[ "$DB_READY" != 1 ]]; then
+  echo "MariaDB fixture failed to become ready"
+  docker logs "$DB_NAME" || true
+  exit 1
+fi
 
 docker run -d --name "$WEB_NAME" \
   --network "$NET_NAME" \
@@ -66,13 +75,22 @@ docker run -d --name "$WEB_NAME" \
   -e "WORDPRESS_CONFIG_EXTRA=define('WP_ENVIRONMENT_TYPE','local');" \
   wordpress:latest >/dev/null
 
+WP_FILES_READY=0
 for _ in $(seq 1 120); do
   if docker exec "$WEB_NAME" test -f /var/www/html/wp-config.php; then
+    WP_FILES_READY=1
+    break
+  fi
+  if [[ "$(docker inspect -f '{{.State.Running}}' "$WEB_NAME" 2>/dev/null || true)" != "true" ]]; then
     break
   fi
   sleep 1
 done
-docker exec "$WEB_NAME" test -f /var/www/html/wp-config.php
+if [[ "$WP_FILES_READY" != 1 ]]; then
+  echo "WordPress fixture failed to become ready"
+  docker logs "$WEB_NAME" || true
+  exit 1
+fi
 
 WPCLI=(docker run --rm --network "$NET_NAME" -v "$VOL_NAME":/var/www/html -e WORDPRESS_DB_HOST="$DB_NAME":3306 -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress wordpress:cli)
 "${WPCLI[@]}" --path=/var/www/html core install \

@@ -1093,6 +1093,7 @@ for key in (
     "simpleUi",
     "taskFixRealUi",
     "diagnostics",
+    "logsClearUi",
 ):
     assert data.get(key) is True, (key, data)
 assert data["calendar"]["type"] == "caldav", data

@@ -176,14 +176,6 @@ $("calendar-full").addEventListener("click", async () => {
 });
 async function runWordPressConnectionTest(action, label, runner) {
   try {
-    // permissions.request() must be started while this call stack still comes
-    // directly from the click event. Do not await storage first.
-    const permissionRequest = AssistantWordPress.requestPermissionForBaseUrl(
-      $("wp-url").value
-    );
-    const granted = await permissionRequest;
-    if (!granted) throw new Error("WordPress host permission was not granted.");
-
     await saveWordPressFromForm();
     renderResult(await runner());
   } catch (error) {
@@ -194,7 +186,7 @@ async function runWordPressConnectionTest(action, label, runner) {
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
       summary: label + " failed: " + message,
-      steps: [{name: "WordPress permission", success: false, error: message}],
+      steps: [{name: "WordPress connection", success: false, error: message}],
     }, "connection");
     renderResult(result);
   }

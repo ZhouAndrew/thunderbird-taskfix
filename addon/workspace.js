@@ -468,5 +468,25 @@ browser.ThunderbirdCalDAV.onItemsChanged.addListener(() => {
   window.__caldavAssistantRefresh = setTimeout(refreshAll, 250);
 });
 
+if (browser.storage?.onChanged) {
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    const changed = changes["caldavAssistant.settings"];
+    if (areaName !== "local" || !changed) return;
+
+    state.settings = changed.newValue || {};
+    state.taskView = state.settings.taskView || "incomplete";
+    state.taskCalendarId = String(state.settings.taskCalendarId || "");
+    state.filtersInitialized = true;
+    renderFilters();
+    renderGuidance();
+
+    if (state.selected && !filteredTasks().some(task => sameTaskRef(state.selected, task))) {
+      state.selected = null;
+    }
+    renderTasks();
+    renderFlow();
+  });
+}
+
 setInterval(updateElapsed, 1000);
 refreshAll();

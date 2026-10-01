@@ -13,6 +13,8 @@ if (!global.atob) global.atob = value => Buffer.from(value, "base64").toString("
 const local = {};
 const storageWrites = [];
 let permissionGranted = false;
+let permissionRequestCount = 0;
+let lastPermissionOrigins = [];
 global.browser = {
   storage: {
     local: {
@@ -22,7 +24,12 @@ global.browser = {
   },
   permissions: {
     async contains() { return permissionGranted; },
-    async request() { permissionGranted = true; return true; },
+    async request(details = {}) {
+      permissionRequestCount += 1;
+      lastPermissionOrigins = [...(details.origins || [])];
+      permissionGranted = true;
+      return true;
+    },
   },
 };
 
@@ -146,8 +153,23 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
     "targeted settings undo damaged unrelated WordPress configuration"
   );
 
+  const beforeGrant = await AssistantWordPress.quickTest();
+  assert(!beforeGrant.success, "WordPress quick test unexpectedly self-requested host permission");
+  assert(permissionRequestCount === 0, "quickTest called permissions.request outside a UI gesture");
+
+  // The UI is responsible for starting this call directly from a click handler.
+  const grantPromise = AssistantWordPress.requestPermissionForBaseUrl(
+    "http://example.test/wordpress/"
+  );
+  assert(permissionRequestCount === 1, "explicit WordPress permission request was not started synchronously");
+  assert(
+    lastPermissionOrigins.length === 1 && lastPermissionOrigins[0] === "http://example.test/*",
+    "WordPress permission origin is incorrect"
+  );
+  assert(await grantPromise, "WordPress host permission was not granted");
+
   const quick = await AssistantWordPress.quickTest();
-  assert(quick.success, "WordPress quick test failed");
+  assert(quick.success, "WordPress quick test failed after explicit permission grant");
   assert(quick.logSaved === true, "WordPress quick result was not persistently logged");
   assert(permissionGranted, "host permission was not requested");
 

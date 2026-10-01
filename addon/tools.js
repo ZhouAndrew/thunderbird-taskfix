@@ -42,14 +42,19 @@ function renderResult(result) {
   root.appendChild(list);
 }
 
-async function saveSettings() {
-  const wordpress = {
+async function saveWordPressFromForm() {
+  await AssistantWordPress.saveConfig({
     baseUrl: $("wp-url").value,
     username: $("wp-user").value,
     applicationPassword: $("wp-password").value,
-  };
-  await AssistantWordPress.saveConfig(wordpress);
-  await AssistantStorage.saveSettings({
+  });
+}
+
+async function saveSettings() {
+  await saveWordPressFromForm();
+
+  const changed = await AssistantStorage.saveSettingsWithUndo({
+    taskView: $("task-view").value || "incomplete",
     taskCalendarId: $("task-calendar").value,
     workCalendarId: $("work-calendar").value,
   });
@@ -60,12 +65,49 @@ async function saveSettings() {
     startedAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
     summary: "设置已保存。",
-    steps: [],
+    steps: [{
+      component: "Settings",
+      operation: "save defaults",
+      success: true,
+      details: {
+        previous: changed.previous,
+        next: changed.next,
+      },
+    }],
   };
   const stored = await AssistantStorage.persistResult(result, "system");
   $("save-result").textContent = stored.logSaved === false
-    ? "⚠ 设置已保存，但日志保存失败。"
-    : "✓ 设置已保存，并已写入日志。";
+    ? "⚠ 设置已保存，但日志保存失败。可以撤销刚才的 Calendar / 视图设置。"
+    : "✓ 设置已保存。可以继续使用，也可以撤销刚才的 Calendar / 视图设置。";
+  $("undo-settings").hidden = false;
+}
+
+async function undoSettings() {
+  const restored = await AssistantStorage.undoSettings();
+  if (!restored) {
+    $("save-result").textContent = "没有可以撤销的设置修改。";
+    $("undo-settings").hidden = true;
+    return;
+  }
+
+  const result = await AssistantStorage.persistResult({
+    action: "settings.undo",
+    success: true,
+    startedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    summary: "已撤销刚才的 Calendar / 视图设置。",
+    steps: [{
+      component: "Settings",
+      operation: "undo defaults",
+      success: true,
+      details: {restored},
+    }],
+  }, "system");
+
+  await load();
+  $("save-result").textContent = result.logSaved === false
+    ? "⚠ 设置已撤销，但日志保存失败。"
+    : "✓ 已撤销刚才的 Calendar / 视图设置。";
 }
 
 async function load() {
@@ -90,7 +132,12 @@ async function load() {
     option($("work-calendar"), calendar.id, calendar.name);
   }
 
-  $("task-calendar").value = settings.taskCalendarId || "";
+  $("task-view").value = settings.taskView || "incomplete";
+
+  const taskCalendarExists = [...$("task-calendar").options]
+    .some(item => item.value === (settings.taskCalendarId || ""));
+  $("task-calendar").value = taskCalendarExists ? (settings.taskCalendarId || "") : "";
+
   if ([...$("work-calendar").options].some(item => item.value === settings.workCalendarId)) {
     $("work-calendar").value = settings.workCalendarId;
   }
@@ -98,9 +145,17 @@ async function load() {
   $("wp-url").value = wp.baseUrl || "";
   $("wp-user").value = wp.username || "";
   $("wp-password").value = wp.applicationPassword || "";
+
+  $("undo-settings").hidden = !(await AssistantStorage.getSettingsUndo());
+
+  if (settings.taskCalendarId && !taskCalendarExists) {
+    $("save-result").textContent =
+      "原来的默认 Task Calendar 目前不可用。请选择新的 Calendar，或选择“全部 Task Calendar”。";
+  }
 }
 
 $("save-settings").addEventListener("click", saveSettings);
+$("undo-settings").addEventListener("click", undoSettings);
 $("calendar-quick").addEventListener("click", async () => {
   renderResult(await AssistantConnection.quickCalendarTest());
 });
@@ -121,11 +176,11 @@ $("calendar-full").addEventListener("click", async () => {
   renderResult(await AssistantConnection.fullCalendarWriteTest(calendarId));
 });
 $("wp-quick").addEventListener("click", async () => {
-  await saveSettings();
+  await saveWordPressFromForm();
   renderResult(await AssistantWordPress.quickTest());
 });
 $("wp-full").addEventListener("click", async () => {
-  await saveSettings();
+  await saveWordPressFromForm();
   renderResult(await AssistantWordPress.fullWriteTest());
 });
 

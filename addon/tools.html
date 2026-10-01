@@ -35,9 +35,18 @@
         <label>Work Calendar
           <select id="work-calendar"></select>
         </label>
-        <label>WordPress URL<input id="wp-url" placeholder="http://server/wordpress"></label>
+        <label>WordPress 连接方式
+          <select id="wp-transport">
+            <option value="auto">自动（有 Application Password 时用 REST，否则 WP-CLI）</option>
+            <option value="application-password">Application Password / REST</option>
+            <option value="wp-cli">WP-CLI（兼容旧脚本）</option>
+          </select>
+        </label>
+        <label>WordPress URL<input id="wp-url" placeholder="https://andrew.local"></label>
         <label>WordPress 用户名<input id="wp-user"></label>
         <label>Application Password<input id="wp-password" type="password"></label>
+        <label>WordPress 本地路径<input id="wp-path" placeholder="/var/www/html/wordpress"></label>
+        <label>WP-CLI 命令<input id="wp-cli" placeholder="wp"></label>
       </div>
       <div class="tool-actions">
         <button id="save-settings">保存设置</button>

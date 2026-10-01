@@ -16,8 +16,8 @@ function render(result) {
 
   const lines = [];
   if (result.post) {
-    lines.push("Post ID: " + result.post.id);
-    lines.push("Status: " + result.post.status);
+    lines.push("今日日志: " + (result.post.title || "WordPress") + " · Post ID " + result.post.id);
+    if (result.post.createdToday) lines.push("今天的日志文章已自动创建");
     if (result.post.link) lines.push("URL: " + result.post.link);
   }
   for (const media of result.media || []) {
@@ -45,12 +45,14 @@ $("submit").addEventListener("click", async () => {
   $("submit").disabled = true;
   try {
     const result = await AssistantWordPress.createLog({
-      title: $("title").value,
       content: $("content").value,
-      status: $("post-status").value,
       files: [...$("files").files],
     });
     render(result);
+    if (result.success) {
+      $("content").value = "";
+      $("files").value = "";
+    }
   } finally {
     $("submit").disabled = false;
   }

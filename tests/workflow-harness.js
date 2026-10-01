@@ -8,6 +8,7 @@ function assert(condition, message) {
 }
 
 const storage = {};
+const storageWrites = [];
 global.browser = {
   storage: {
     local: {
@@ -18,6 +19,7 @@ global.browser = {
         return result;
       },
       async set(values) {
+        storageWrites.push(...Object.keys(values));
         Object.assign(storage, values);
       },
     },
@@ -59,6 +61,7 @@ function resetAll() {
   events.clear();
   eventCounter = 0;
   for (const key of Object.keys(storage)) delete storage[key];
+  storageWrites.length = 0;
   for (const key of Object.keys(faults)) faults[key] = false;
 }
 
@@ -144,6 +147,13 @@ for (const script of ["addon/core/storage.js", "addon/core/executor.js"]) {
 async function normalLifecycle() {
   let receipt = await AssistantExecutor.start(clone(task), "work");
   assert(receipt.success, "start failed");
+  assert(receipt.logSaved === true, "start result was returned before persistent log success");
+  const firstAuditWrite = storageWrites.indexOf("caldavAssistant.audit");
+  const firstReceiptWrite = storageWrites.indexOf("caldavAssistant.lastReceipt");
+  assert(
+    firstAuditWrite >= 0 && firstReceiptWrite >= 0 && firstAuditWrite < firstReceiptWrite,
+    "result cache was written before the persistent audit log"
+  );
   assert(task.status === "IN-PROCESS", "start did not set task IN-PROCESS");
   assert(task.paused === false, "start incorrectly paused task");
 

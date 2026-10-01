@@ -309,16 +309,19 @@ function tempFileFromBase64(filename, base64) {
 async function runWpCliApi(details = {}) {
   const executable = String(details.executable || "wp").trim() || "wp";
   const wordpressPath = String(details.wordpressPath || "").trim();
+  const prefixArgs = Array.isArray(details.prefixArgs)
+    ? details.prefixArgs.map(value => String(value))
+    : [];
   const rawArgs = Array.isArray(details.args)
     ? details.args.map(value => String(value))
     : [];
 
-  if (rawArgs.length > 200) {
+  if (prefixArgs.length + rawArgs.length > 200) {
     throw new ExtensionError("Too many WP-CLI arguments");
   }
 
   let tempFile = null;
-  let args = rawArgs;
+  let args = [...prefixArgs, ...rawArgs];
   if (details.tempFileBase64) {
     tempFile = tempFileFromBase64(
       details.tempFileName || "caldav-assistant-upload.bin",

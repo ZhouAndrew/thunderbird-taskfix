@@ -392,6 +392,69 @@ async function runWpCliApi(details = {}) {
   }
 }
 
+async function runWordPressHelperApi(details = {}) {
+  const helperDir = String(details.helperDir || "").trim();
+  const helperName = String(details.helperName || "").trim();
+  const allowed = new Set(["find-today-post.sh", "create-post.sh"]);
+
+  if (!allowed.has(helperName)) {
+    throw new ExtensionError("Unsupported WordPress helper script");
+  }
+  if (!helperDir) {
+    return {available: false, exitCode: null, stdout: "", stderr: ""};
+  }
+
+  const directory = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+  let resolvedDir = helperDir;
+  if (/^~\//.test(resolvedDir)) {
+    const home = Cc["@mozilla.org/file/directory_service;1"]
+      .getService(Ci.nsIProperties)
+      .get("Home", Ci.nsIFile)
+      .path;
+    resolvedDir = home + resolvedDir.slice(1);
+  }
+  directory.initWithPath(resolvedDir);
+  const file = directory.clone();
+  file.append(helperName);
+  if (!file.exists() || !file.isFile()) {
+    return {available: false, exitCode: null, stdout: "", stderr: ""};
+  }
+
+  const started = Date.now();
+  appendDiagnosticLog("wp-helper", "run.start", {
+    helper: file.path,
+  });
+
+  try {
+    const proc = await Subprocess.call({
+      command: file.path,
+      arguments: [],
+    });
+    proc.stdin.close();
+    const [stdout, stderr, status] = await Promise.all([
+      readPipeText(proc.stdout),
+      readPipeText(proc.stderr),
+      proc.wait(),
+    ]);
+    const exitCode = Number(status?.exitCode ?? -1);
+    appendDiagnosticLog("wp-helper", "run.success", {
+      helper: file.path,
+      exitCode,
+      durationMs: Date.now() - started,
+    });
+    return {available: true, exitCode, stdout, stderr};
+  } catch (error) {
+    appendDiagnosticLog("wp-helper", "run.error", {
+      helper: file.path,
+      durationMs: Date.now() - started,
+      error,
+    });
+    throw new ExtensionError(
+      "WordPress helper failed: " + String(error?.message || error)
+    );
+  }
+}
+
 async function loggedMutation(action, details, callback) {
   const started = Date.now();
   appendDiagnosticLog("provider", action + ".start", details);
@@ -988,6 +1051,7 @@ this.ThunderbirdCalDAV = class extends ExtensionAPI {
         writeDiagnostic: writeDiagnosticApi,
         httpRequest: httpRequestApi,
         runWpCli: runWpCliApi,
+        runWordPressHelper: runWordPressHelperApi,
 
         onItemsChanged: new EventManager({
           context,

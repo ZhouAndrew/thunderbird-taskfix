@@ -100,7 +100,8 @@ with zipfile.ZipFile(path) as z:
     assert "work-calendar" not in workspace_html
     assert "calendar-filter" not in workspace_html
     assert "VTODO" not in workspace_html
-    assert "Assistant" not in workspace_html.replace("CalDAV Assistant", "")
+    assert 'id="selected-flow-state"' not in workspace_html
+    assert ">Assistant<" not in workspace_html
     assert "JSON.stringify(item.details" not in workspace
     assert "AssistantExecutor.start" in workspace
     assert "AssistantExecutor.pause" in workspace

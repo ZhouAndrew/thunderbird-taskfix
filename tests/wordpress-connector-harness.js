@@ -12,6 +12,7 @@ if (!global.atob) global.atob = value => Buffer.from(value, "base64").toString("
 
 const local = {};
 const storageWrites = [];
+let lastWpCliCall = null;
 global.browser = {
   storage: {
     local: {
@@ -43,6 +44,7 @@ global.browser = {
       };
     },
     async runWpCli(details = {}) {
+      lastWpCliCall = details;
       const args = details.args || [];
       if (args[0] === "core" && args[1] === "is-installed") {
         return {exitCode: 0, stdout: "", stderr: ""};
@@ -183,11 +185,16 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
   await AssistantWordPress.saveConfig({
     transport: "wp-cli",
     wordpressPath: "/var/www/html/wordpress",
-    wpCliExecutable: "wp",
+    wpCliCommand: "sudo -n -u www-data /usr/local/bin/wp",
   });
   const cliQuick = await AssistantWordPress.quickTest();
   assert(cliQuick.success, "WordPress WP-CLI quick test failed");
   assert(cliQuick.transport === "wp-cli", "explicit WP-CLI transport was not selected");
+  assert(lastWpCliCall?.executable === "sudo", "legacy sudo WP-CLI executable was not preserved");
+  assert(
+    JSON.stringify(lastWpCliCall?.prefixArgs) === JSON.stringify(["-n", "-u", "www-data", "/usr/local/bin/wp"]),
+    "legacy sudo WP-CLI prefix arguments were not preserved"
+  );
 
   await AssistantWordPress.saveConfig({
     transport: "application-password",
@@ -195,7 +202,7 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
     username: "acceptance",
     applicationPassword: "secret-app-password",
     wordpressPath: "/var/www/html/wordpress",
-    wpCliExecutable: "wp",
+    wpCliCommand: "wp",
   });
 
   const firstAuditWrite = storageWrites.indexOf("caldavAssistant.audit");

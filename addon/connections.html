@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>CalDAV Assistant · 连接</title><link rel="stylesheet" href="workspace.css"></head>
+<body><main>
+<header class="topbar"><div><h1>连接与读写测试</h1><p>这个工具只测试连接和读写，不负责 Task 工作流程。</p></div></header>
+<nav class="tool-nav"><a href="workspace.html">工作</a><a href="record.html">记录</a><a href="today.html">今天</a><a class="active" href="connections.html">连接</a><a href="logs.html">日志</a></nav>
+<div class="tool-grid">
+<section class="card"><h2>Thunderbird / CalDAV</h2><p>快速测试只读。完整测试只创建临时 TEST VEVENT，不创建 VTODO。</p>
+<label class="compact-field">测试 Calendar<select id="calendar"></select></label>
+<div class="tool-actions"><button id="calendar-quick">快速读取测试</button><button id="calendar-full">完整读写测试</button></div></section>
+<section class="card"><h2>WordPress</h2><div class="form-grid">
+<label>WordPress URL<input id="wp-url" placeholder="http://server/wordpress"></label>
+<label>用户名<input id="wp-user"></label>
+<label>Application Password<input id="wp-password" type="password"></label>
+</div><div class="tool-actions"><button id="wp-save">保存连接</button><button id="wp-quick">快速连接测试</button><button id="wp-full">完整读写测试</button></div>
+<p class="muted">完整测试会创建临时 Draft Post 和测试图片，读回/更新/删除后清理。</p></section>
+</div>
+<section class="card result-box"><h2>最近一次测试结果</h2><div id="result">尚未测试。</div></section>
+</main>
+<script src="core/storage.js"></script><script src="core/executor.js"></script><script src="core/connection.js"></script><script src="core/wordpress.js"></script><script src="connections.js"></script>
+</body></html>

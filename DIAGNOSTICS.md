@@ -1,4 +1,4 @@
-# Thunderbird CalDAV Lab 0.3.x diagnostics
+# CalDAV Assistant Experimental 0.3.x diagnostics
 
 Version 0.3.5 adds a persistent, extension-owned diagnostic log for production troubleshooting.
 
@@ -9,13 +9,13 @@ Open **Thunderbird CalDAV → 诊断**. The page shows the exact profile-local p
 The file name is:
 
 ```text
-thunderbird-caldav-lab.log
+caldav-assistant-experimental.log
 ```
 
 The extension keeps one rotated backup:
 
 ```text
-thunderbird-caldav-lab.log.1
+caldav-assistant-experimental.log.1
 ```
 
 The current file rotates at about 1 MiB. Logs live inside the active Thunderbird profile; the add-on does not require a Native Host, Python process, daemon, or external logger.
@@ -57,6 +57,6 @@ When reporting a production problem, reproduce it once and copy the Diagnostics 
 
 ## CI diagnostics
 
-The real Thunderbird + real Radicale matrix always uploads a per-version/per-timezone diagnostic artifact, including the CalDAV Lab log and Thunderbird/Radicale stdout/stderr when available. Artifacts are uploaded even when the acceptance job fails.
+The real Thunderbird + real Radicale matrix always uploads a per-version/per-timezone diagnostic artifact, including the CalDAV Assistant log and Thunderbird/Radicale stdout/stderr when available. Artifacts are uploaded even when the acceptance job fails.
 
 A release is not considered verified only because syntax/unit tests pass. The real matrix exercises Thunderbird 153.0.2esr, 153.1.0esr and 153.3.1esr in UTC and Asia/Shanghai, including restart persistence.

@@ -24,8 +24,8 @@ const TASK_STATUSES = new Set([
   "CANCELLED",
 ]);
 
-const LOG_FILE_NAME = "thunderbird-caldav-lab.log";
-const LOG_BACKUP_NAME = "thunderbird-caldav-lab.log.1";
+const LOG_FILE_NAME = "caldav-assistant-experimental.log";
+const LOG_BACKUP_NAME = "caldav-assistant-experimental.log.1";
 const LOG_MAX_BYTES = 1024 * 1024;
 
 function profileFile(name) {
@@ -64,7 +64,7 @@ function sanitizeLogDetails(value, depth = 0) {
   return String(value);
 }
 
-function appendLabLog(component, event, details = {}) {
+function appendDiagnosticLog(component, event, details = {}) {
   if (typeof Cc === "undefined" || typeof Ci === "undefined") return "";
   try {
     let file = profileFile(LOG_FILE_NAME);
@@ -92,7 +92,7 @@ function appendLabLog(component, event, details = {}) {
     converter.close();
     return file.path;
   } catch (error) {
-    console.warn("[ThunderbirdCalDAV] diagnostics write failed", error);
+    console.warn("[CalDAVAssistant] diagnostics write failed", error);
     return "";
   }
 }
@@ -151,27 +151,27 @@ async function clearDiagnosticsApi() {
   const backup = profileFile(LOG_BACKUP_NAME);
   if (file.exists()) file.remove(false);
   if (backup.exists()) backup.remove(false);
-  const path = appendLabLog("diagnostics", "cleared", {});
+  const path = appendDiagnosticLog("diagnostics", "cleared", {});
   return {ok: true, path};
 }
 
 async function writeDiagnosticApi(component, event, details = {}) {
-  const path = appendLabLog(component, event, details || {});
+  const path = appendDiagnosticLog(component, event, details || {});
   return {ok: true, path};
 }
 
 async function loggedMutation(action, details, callback) {
   const started = Date.now();
-  appendLabLog("provider", action + ".start", details);
+  appendDiagnosticLog("provider", action + ".start", details);
   try {
     const result = await callback();
-    appendLabLog("provider", action + ".success", {
+    appendDiagnosticLog("provider", action + ".success", {
       ...details,
       durationMs: Date.now() - started,
     });
     return result;
   } catch (error) {
-    appendLabLog("provider", action + ".error", {
+    appendDiagnosticLog("provider", action + ".error", {
       ...details,
       durationMs: Date.now() - started,
       error,
@@ -311,6 +311,9 @@ function taskView(item) {
     completedDate: dateView(item.completedDate),
     description: String(item.getProperty("DESCRIPTION") || ""),
     recurring: Boolean(item.recurrenceInfo || item.recurrenceId),
+    paused:
+      String(item.getProperty("X-CALDAV-ASSISTANT-PAUSED") || "").toUpperCase() ===
+      "TRUE",
   };
 }
 
@@ -330,6 +333,13 @@ function eventView(item) {
     categories: categoriesOf(item),
     description: String(item.getProperty("DESCRIPTION") || ""),
     recurring: Boolean(item.recurrenceInfo || item.recurrenceId),
+    taskUid: String(item.getProperty("X-CALDAV-ASSISTANT-TASK-UID") || ""),
+    workSession:
+      String(item.getProperty("X-CALDAV-ASSISTANT-WORK-SESSION") || "").toUpperCase() ===
+      "TRUE",
+    workOpen:
+      String(item.getProperty("X-CALDAV-ASSISTANT-WORK-OPEN") || "").toUpperCase() ===
+      "TRUE",
   };
 }
 
@@ -374,7 +384,7 @@ async function readItems(calendar, filter, start = null, end = null) {
     const items = await calendar.getItemsAsArray(filter, 0, start, end);
     const durationMs = Date.now() - started;
     if (durationMs >= 750) {
-      appendLabLog("provider", "read.slow", {
+      appendDiagnosticLog("provider", "read.slow", {
         calendarId: String(calendar.id || ""),
         calendarName: String(calendar.name || ""),
         durationMs,
@@ -383,7 +393,7 @@ async function readItems(calendar, filter, start = null, end = null) {
     }
     return items;
   } catch (error) {
-    appendLabLog("provider", "read.error", {
+    appendDiagnosticLog("provider", "read.error", {
       calendarId: String(calendar.id || ""),
       calendarName: String(calendar.name || ""),
       durationMs: Date.now() - started,
@@ -462,6 +472,13 @@ function applyTaskChanges(item, changes) {
   if ("categories" in changes) setCategories(item, changes.categories);
   if ("due" in changes) item.dueDate = fromInputDate(changes.due);
   if ("start" in changes) item.entryDate = fromInputDate(changes.start);
+  if ("paused" in changes) {
+    if (changes.paused) {
+      item.setProperty("X-CALDAV-ASSISTANT-PAUSED", "TRUE");
+    } else {
+      item.deleteProperty("X-CALDAV-ASSISTANT-PAUSED");
+    }
+  }
 
   if ("status" in changes) {
     const status = normalizeTaskStatus(changes.status);
@@ -532,16 +549,36 @@ function applyEventChanges(item, changes) {
     if (status) item.status = status;
     else item.deleteProperty("STATUS");
   }
+  if ("taskUid" in changes) {
+    if (changes.taskUid) {
+      item.setProperty("X-CALDAV-ASSISTANT-TASK-UID", String(changes.taskUid));
+    } else {
+      item.deleteProperty("X-CALDAV-ASSISTANT-TASK-UID");
+    }
+  }
+  if ("workSession" in changes) {
+    if (changes.workSession) {
+      item.setProperty("X-CALDAV-ASSISTANT-WORK-SESSION", "TRUE");
+    } else {
+      item.deleteProperty("X-CALDAV-ASSISTANT-WORK-SESSION");
+    }
+  }
+  if ("workOpen" in changes) {
+    if (changes.workOpen) {
+      item.setProperty("X-CALDAV-ASSISTANT-WORK-OPEN", "TRUE");
+    } else {
+      item.deleteProperty("X-CALDAV-ASSISTANT-WORK-OPEN");
+    }
+  }
 }
 
 function validateEvent(item) {
   if (!item.startDate) {
     throw new ExtensionError("Event start is required");
   }
-  if (!item.endDate) {
-    item.endDate = item.startDate.clone();
-  }
-  if (item.endDate.compare(item.startDate) < 0) {
+  // DTEND is intentionally optional. CalDAV Assistant keeps the current work
+  // session open until Pause/Complete/Cancel closes it.
+  if (item.endDate && item.endDate.compare(item.startDate) < 0) {
     throw new ExtensionError("Event end must not be before its start");
   }
 }
@@ -604,6 +641,18 @@ async function listEventsApi(calendarId = "", start = "", end = "") {
   return batches.flat();
 }
 
+async function getTaskApi(calendarId, itemId) {
+  const calendar = calendarById(calendarId);
+  const item = await findItem(calendar, itemId, "task");
+  return taskView(item);
+}
+
+async function getEventApi(calendarId, itemId) {
+  const calendar = calendarById(calendarId);
+  const item = await findItem(calendar, itemId, "event");
+  return eventView(item);
+}
+
 async function createTaskApi(calendarId, values) {
   return loggedMutation("task.create", {calendarId: String(calendarId || "")}, async () => {
     const calendar = writableCalendarById(calendarId, "task");
@@ -648,7 +697,7 @@ async function createEventApi(calendarId, values) {
   return loggedMutation("event.create", {calendarId: String(calendarId || "")}, async () => {
     const calendar = writableCalendarById(calendarId, "event");
     const event = new CalEvent();
-    event.id = cal.getUUID();
+    event.id = values?.id ? String(values.id) : cal.getUUID();
     event.calendar = calendar;
     applyEventChanges(event, values || {});
     validateEvent(event);
@@ -693,6 +742,8 @@ this.ThunderbirdCalDAV = class extends ExtensionAPI {
         listCalendars: listCalendarsApi,
         listTasks: listTasksApi,
         listEvents: listEventsApi,
+        getTask: getTaskApi,
+        getEvent: getEventApi,
         createTask: createTaskApi,
         updateTask: updateTaskApi,
         deleteTask: deleteTaskApi,

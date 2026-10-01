@@ -1,105 +1,46 @@
-# Thunderbird CalDAV Lab
+# CalDAV Assistant Experimental
 
-Current build: **0.3.5** for official Thunderbird 153.x.
+Current build: **0.3.5** for official Thunderbird **153.0.2 through 153.1.x**.
 
-This project is a Thunderbird extension. It is **not** the separate Python/CLI CalDAV Assistant project.
+This branch keeps the direct Thunderbird Calendar/Tasks provider architecture from the 0.3.x rewrite, but replaces the CRUD-lab workspace with the actual CalDAV Assistant workflow.
 
-## Architecture
+## Main workflow
 
-The add-on reads and writes calendar data through Thunderbird itself:
+The Work page consumes already existing VTODOs:
 
-```text
-Thunderbird CalDAV Lab XPI
-        |
-        +-- ThunderbirdCalDAV Experiment API
-        |       |
-        |       +-- cal.manager
-        |       +-- calICalendar.getItemsAsArray()
-        |       +-- calICalendar.addItem()
-        |       +-- calICalendar.modifyItem()
-        |       +-- calICalendar.deleteItem()
-        |
-        +-- Thunderbird Calendar / Tasks providers
-                    |
-                    +-- CalDAV provider
-                    +-- local/offline cache
-                    |
-                    +-- configured CalDAV server
-```
+select existing Task -> Start -> Working -> Pause/Resume -> Complete or Cancel
 
-There is no Native Host, no Python process, no companion daemon, and no second CalDAV client in this add-on.
+It does not create Tasks. Start/Resume create Work VEVENTs. Pause/Complete/Cancel close the current Work VEVENT. Every supported write is followed by provider read-back verification and a persistent on-screen receipt.
 
-## 0.3.5 production diagnostics
+## Program blocks
 
-- Adds a profile-local JSONL diagnostic log owned by the extension: `thunderbird-caldav-lab.log`.
-- Adds a **诊断** tab that shows the exact log path and supports Refresh, Copy and Clear.
-- Records startup, TaskFix injection, provider mutations, slow reads and errors without logging task/event descriptions.
-- Password/secret/token/authorization/credential-shaped detail fields are redacted before writing.
-- Rotates the current log at about 1 MiB and keeps one backup.
-- Real Thunderbird acceptance verifies diagnostics persistence, redaction and survival across restart.
-- CI always publishes the extension log plus Thunderbird/Radicale diagnostics, including failed jobs.
-- Keeps the 0.3.4 supported Thunderbird contract (**153.0.2 through 153.1.x**) unchanged.
+- **Work**: Task lifecycle only.
+- **Executor**: performs Start/Pause/Resume/Complete/Cancel and verifies writes.
+- **Connections**: tests Thunderbird/CalDAV and WordPress read/write paths.
+- **Logs**: persistent audit, separate from the workflow UI.
+- **Record**: explicit WordPress post + attachment creation with Post/Media IDs in the receipt.
+- **Today**: workflow activity derived from the local audit.
 
-## 0.3.4 supported-version contract
+See ARCHITECTURE.md for the frozen responsibility boundary.
 
-- Supported Thunderbird range is **153.0.2 through 153.1.x**.
-- Thunderbird 153.3.1 was deliberately tested and rejected from the support range because its normal Tasks UI no longer accepts the retained TaskFix window-injection path, although the direct Calendar/CalDAV CRUD path itself works.
-- The add-on now fails closed at installation/update compatibility rather than claiming support for an unverified Thunderbird version.
-- Real CI covers 153.0.2esr, 153.1.0esr and 153.1.1esr in UTC and Asia/Shanghai, including restart of the same profile.
+## Direct Thunderbird architecture
 
-## 0.3.3 supported-version contract
+The add-on uses ThunderbirdCalDAV Experiment API -> Thunderbird Calendar/Tasks provider -> configured CalDAV server. It uses cal.manager, getItemsAsArray(), getItem(), addItem(), modifyItem() and deleteItem().
 
-- Minimum supported Thunderbird version is now **153.0.2**.
-- Real acceptance proved Thunderbird 153.0 has a restart-specific Experiment/Tasks UI injection failure even though first-run CalDAV CRUD succeeds; it is therefore not advertised as supported.
-- CI now exercises 153.0.2esr, the user's 153.1.0esr line, and 153.3.1esr in both UTC and Asia/Shanghai, including a full Thunderbird restart.
+There is no Native Host, no Python companion process, and no second CalDAV client.
 
-## 0.3.2 hardening
+## Local auxiliary state
 
-- Uses Thunderbird's exported `CalTodo` and `CalEvent` constructors directly; `cal.createTodo()` / `cal.createEvent()` do not exist in current Thunderbird calendar utilities.
-- Keeps the direct provider CRUD harness and package contract checks aligned with the real Thunderbird constructor API.
+browser.storage.local stores only Assistant state such as current Task pointer, current Work VEVENT pointer, accumulated time, settings, latest receipt and audit history. Task/Event facts remain in Thunderbird/CalDAV.
 
-## 0.3.1 hardening
+No success/failure information may exist only as a disappearing popup. The latest receipt remains visible on Work and full history is available on Logs.
 
-- Imports Thunderbird's real `ExtensionError` implementation instead of relying on an undeclared global.
-- Rejects disabled/read-only calendars and calendars that do not support the requested item type.
-- Validates VTODO status, priority and percent-complete values.
-- Uses `calendar.getItem()` for exact update/delete targets.
-- Rejects VEVENT end times earlier than their start.
-- Prevents accidental cross-calendar edits by locking the Calendar selector while editing an existing item.
-- Read-only items remain viewable but Save/Delete are disabled.
-- Makes the UI's event-range end date inclusive.
-- Adds a direct Calendar-provider API harness covering create/read/update/delete and error paths.
+## Read/write diagnostics
 
-## 0.3.0 rewrite
+The Calendar full test creates a temporary VEVENT only, then performs create -> read -> update -> read -> delete -> verify absence. It creates no VTODO.
 
-- Adds a Thunderbird Space named **Thunderbird CalDAV**.
-- Reads Thunderbird's configured calendars directly.
-- Lists VTODO tasks directly from Thunderbird.
-- Lists VEVENT events directly from Thunderbird.
-- Creates, edits and deletes VTODO through Thunderbird's calendar provider.
-- Creates, edits and deletes VEVENT through Thunderbird's calendar provider.
-- Supports task title, due date, standard VTODO status, priority, categories and description.
-- Supports event title, start/end, categories and description.
-- Watches Thunderbird calendar changes and refreshes the workspace.
-- Keeps the existing recurring-safe multi-select Status/Progress/Category/Priority fixes in the native Tasks view.
-- Uses Thunderbird/OS light and dark colors.
-- Does not patch Thunderbird application files.
+The WordPress full test uses a temporary Draft post and test media, verifies both, then deletes them.
 
-## CalDAV responsibility
+## Testing
 
-If a selected Thunderbird calendar is CalDAV-backed, Thunderbird's own provider performs the CalDAV network synchronization. This add-on does not make a parallel HTTP/CalDAV connection.
-
-If a selected calendar is local, changes remain local because that is the calendar Thunderbird exposes.
-
-## Acceptance checklist
-
-1. Install the XPI in Thunderbird 153.x.
-2. Open the **Thunderbird CalDAV** Space.
-3. Confirm configured Thunderbird calendars are listed.
-4. Confirm existing CalDAV VTODOs appear without any external process.
-5. Create a task; verify it appears in Thunderbird Tasks and on the CalDAV server after Thunderbird sync.
-6. Edit title, due date, status, priority, category and description; verify persistence after restart.
-7. Delete a task; verify deletion after sync.
-8. Create/edit/delete an event and verify it in Thunderbird Calendar and on the server.
-9. Make a change in Thunderbird's normal Tasks/Calendar UI and verify the Space refreshes.
-10. Re-run multi-select recurring-task Status/Progress/Category/Priority acceptance.
+CI covers the direct provider API, workflow state machine, WordPress connector, XPI contract, real Thunderbird + real Radicale workflow, persistent audit, Work VEVENT lifecycle, and restart of the same Thunderbird profile.

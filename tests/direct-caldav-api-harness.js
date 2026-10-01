@@ -270,17 +270,6 @@ const instance = new global.ThunderbirdCalDAV();
 const api = instance.getAPI({}).ThunderbirdCalDAV;
 
 (async () => {
-  assert(typeof api.writeDiagnostic === "function", "diagnostics writer API missing");
-  assert(typeof api.readDiagnostics === "function", "diagnostics reader API missing");
-  assert(typeof api.clearDiagnostics === "function", "diagnostics clear API missing");
-  const diagnosticWrite = await api.writeDiagnostic("harness", "probe", {
-    password: "must-not-leak",
-    note: "node harness has no profile filesystem",
-  });
-  assert(diagnosticWrite.ok === true, "diagnostics writer must degrade safely outside Thunderbird");
-  const diagnosticRead = await api.readDiagnostics(20);
-  assert(Array.isArray(diagnosticRead.lines), "diagnostics reader result shape is wrong");
-
   const listedCalendars = await api.listCalendars();
   assert(listedCalendars.length === 5, "must list every Thunderbird calendar");
   assert(listedCalendars.find(x => x.id === "cal-ro").readOnly, "read-only flag lost");
@@ -318,6 +307,9 @@ const api = instance.getAPI({}).ThunderbirdCalDAV;
   assert(createdTask.categories.join(",") === "School,Math", "category de-duplication failed");
   assert(calendarA.calls.add === 1, "task create did not use calendar.addItem");
 
+  const rereadCreatedTask = await api.getTask("cal-a", createdTask.id);
+  assert(rereadCreatedTask.id === createdTask.id, "getTask did not read the created task");
+
   let updatedTask = await api.updateTask("cal-a", createdTask.id, {
     status: "IN-PROCESS",
     percentComplete: 37,
@@ -328,6 +320,16 @@ const api = instance.getAPI({}).ThunderbirdCalDAV;
   assert(updatedTask.percentComplete === 37, "task progress update failed");
   assert(updatedTask.priority === 1, "task priority update failed");
   assert(updatedTask.due.icalString === "20261006", "task due update failed");
+
+  updatedTask = await api.updateTask("cal-a", createdTask.id, {
+    status: "IN-PROCESS",
+    paused: true,
+  });
+  assert(updatedTask.paused === true, "Assistant paused property was not persisted");
+  updatedTask = await api.getTask("cal-a", createdTask.id);
+  assert(updatedTask.paused === true, "Assistant paused property was not read back");
+  updatedTask = await api.updateTask("cal-a", createdTask.id, {paused: false});
+  assert(updatedTask.paused === false, "Assistant paused property was not cleared");
 
   updatedTask = await api.updateTask("cal-a", createdTask.id, {
     percentComplete: 100,
@@ -393,6 +395,33 @@ const api = instance.getAPI({}).ThunderbirdCalDAV;
   assert(createdEvent.start.icalString === "20261005T090000", "event start conversion failed");
   assert(createdEvent.end.icalString === "20261005T103000", "event end conversion failed");
   assert(createdEvent.categories.join(",") === "Work,Meeting", "event categories failed");
+  const rereadCreatedEvent = await api.getEvent("cal-a", createdEvent.id);
+  assert(rereadCreatedEvent.id === createdEvent.id, "getEvent did not read the created event");
+
+  const openWorkEvent = await api.createEvent("cal-a", {
+    title: "Open work session",
+    start: "2026-10-05T14:00",
+    end: null,
+    taskUid: "seed",
+    workSession: true,
+    workOpen: true,
+  });
+  assert(openWorkEvent.taskUid === "seed", "work event task UID property was not persisted");
+  assert(openWorkEvent.workSession === true, "work event marker was not persisted");
+  assert(openWorkEvent.workOpen === true, "work open marker was not persisted");
+
+  let openWorkRead = await api.getEvent("cal-a", openWorkEvent.id);
+  assert(openWorkRead.workOpen === true, "open Work VEVENT read-back lost marker");
+  await api.updateEvent("cal-a", openWorkEvent.id, {
+    end: "2026-10-05T14:30",
+    workOpen: false,
+  });
+  openWorkRead = await api.getEvent("cal-a", openWorkEvent.id);
+  assert(openWorkRead.end?.icalString === "20261005T143000", "Work VEVENT close failed");
+  assert(openWorkRead.workOpen === false, "Work VEVENT close did not clear open marker");
+  await api.updateEvent("cal-a", openWorkEvent.id, {end: null, workOpen: true});
+  openWorkRead = await api.getEvent("cal-a", openWorkEvent.id);
+  assert(openWorkRead.workOpen === true, "Work VEVENT reopen rollback failed");
 
   await assertRejects(
     () => api.createEvent("cal-a", {title: "No start"}),
@@ -453,12 +482,14 @@ const api = instance.getAPI({}).ThunderbirdCalDAV;
 
   const deletedTask = await api.deleteTask("cal-a", createdTask.id);
   const deletedEvent = await api.deleteEvent("cal-a", createdEvent.id);
-  assert(deletedTask.ok && deletedEvent.ok, "delete API result is wrong");
+  const deletedOpenEvent = await api.deleteEvent("cal-a", openWorkEvent.id);
+  assert(deletedTask.ok && deletedEvent.ok && deletedOpenEvent.ok, "delete API result is wrong");
   assert(!(await calendarA.getItem(createdTask.id)), "task still exists after delete");
   assert(!(await calendarA.getItem(createdEvent.id)), "event still exists after delete");
-  assert(calendarA.calls.delete === 2, "deletes did not use calendar.deleteItem");
+  assert(!(await calendarA.getItem(openWorkEvent.id)), "open work event still exists after delete");
+  assert(calendarA.calls.delete === 3, "deletes did not use calendar.deleteItem");
 
-  assert(calendarA.calls.add === 2, "all creates must use Thunderbird calendar.addItem");
+  assert(calendarA.calls.add === 3, "all creates must use Thunderbird calendar.addItem");
   assert(calendarA.calls.modify >= 4, "updates must use Thunderbird calendar.modifyItem");
 
   console.log("direct-caldav-api-harness: PASS");

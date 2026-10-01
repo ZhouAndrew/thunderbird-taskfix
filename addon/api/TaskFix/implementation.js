@@ -25,12 +25,12 @@ function appendTaskFixLog(event, details = {}) {
     const directoryService = Cc["@mozilla.org/file/directory_service;1"]
       .getService(Ci.nsIProperties);
     const file = directoryService.get("ProfD", Ci.nsIFile);
-    file.append("thunderbird-caldav-lab.log");
+    file.append("caldav-assistant-experimental.log");
     if (file.exists() && file.fileSize > 1024 * 1024) {
       const backup = directoryService.get("ProfD", Ci.nsIFile);
-      backup.append("thunderbird-caldav-lab.log.1");
+      backup.append("caldav-assistant-experimental.log.1");
       if (backup.exists()) backup.remove(false);
-      file.moveTo(null, "thunderbird-caldav-lab.log.1");
+      file.moveTo(null, "caldav-assistant-experimental.log.1");
     }
     const stream = Cc["@mozilla.org/network/file-output-stream;1"]
       .createInstance(Ci.nsIFileOutputStream);

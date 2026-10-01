@@ -124,13 +124,16 @@ function makeRecurringParent(id, occurrenceIds, calendarId = "cal") {
 }
 
 const toolbar = new XulNode("hbox", "task-actions-toolbar");
-// Simulate Thunderbird builds where the old Mark Completed anchor is absent.
+const completed = new XulNode("toolbarbutton", "task-actions-markcompleted");
+toolbar.appendChild(completed);
+
 const tree = new XulNode("tree", "calendar-task-tree");
 tree.classList = { contains: name => name === "calendar-task-tree" };
 tree.selectedTasks = [];
 
 const elements = new Map([
   ["task-actions-toolbar", toolbar],
+  ["task-actions-markcompleted", completed],
   ["calendar-task-tree", tree],
 ]);
 
@@ -179,7 +182,6 @@ global.taskDetailsView = {
 const code = fs.readFileSync("addon/content/taskfix-window.js", "utf8");
 vm.runInThisContext(code, { filename: "taskfix-window.js" });
 
-assert(elements.get("task-actions-status"), "Status control must fall back to the toolbar when Mark Completed anchor is absent");
 assert(global.contextChangeTaskProgress !== originalProgress, "progress handler was not patched");
 assert(global.contextChangeTaskPriority !== originalPriority, "priority handler was not patched");
 

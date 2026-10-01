@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "rewrite/direct-thunderbird-caldav"
+      - "feat/caldav-assistant-workflow-*"
   pull_request:
 
 jobs:
@@ -38,10 +39,10 @@ jobs:
           chmod +x tests/real-thunderbird-caldav.sh
           tests/real-thunderbird-caldav.sh "${{ matrix.thunderbird }}" "${{ matrix.timezone }}"
 
-      - name: Upload real Thunderbird diagnostics
+      - name: Upload CalDAV Assistant diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: caldav-lab-diagnostics-${{ matrix.thunderbird }}-${{ matrix.timezone == 'Asia/Shanghai' && 'Asia-Shanghai' || matrix.timezone }}
+          name: caldav-assistant-diagnostics-${{ matrix.thunderbird }}-${{ matrix.timezone == 'Asia/Shanghai' && 'Asia-Shanghai' || matrix.timezone }}
           path: acceptance-artifacts/${{ matrix.thunderbird }}-${{ matrix.timezone == 'Asia/Shanghai' && 'Asia-Shanghai' || matrix.timezone }}
           if-no-files-found: warn

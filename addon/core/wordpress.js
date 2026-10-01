@@ -239,11 +239,38 @@
   ];
 
   function dailyLogTitle(date = new Date()) {
+    // Keep the same human title shape as the existing wp-cli helper:
+    // "October 1  Thursday  2026".
+    return (
+      MONTH_NAMES[date.getMonth()] + " " +
+      date.getDate() + "  " +
+      WEEKDAY_NAMES[date.getDay()] + "  " +
+      date.getFullYear()
+    );
+  }
+
+  function dailyLogSearchText(date = new Date()) {
     return (
       MONTH_NAMES[date.getMonth()] + " " +
       date.getDate() + " " +
       WEEKDAY_NAMES[date.getDay()] + " " +
       date.getFullYear()
+    );
+  }
+
+  function matchesDailyLogTitle(title, date = new Date()) {
+    const text = String(title || "").toLocaleLowerCase();
+    const month = MONTH_NAMES[date.getMonth()].toLocaleLowerCase();
+    const monthAbbr = month.slice(0, 3);
+    const weekday = WEEKDAY_NAMES[date.getDay()].toLocaleLowerCase();
+    const year = String(date.getFullYear());
+    const day = String(date.getDate());
+    const dayPattern = new RegExp("(^|[^0-9])" + day + "([^0-9]|$)");
+    return (
+      (text.includes(month) || text.includes(monthAbbr)) &&
+      dayPattern.test(text) &&
+      text.includes(year) &&
+      text.includes(weekday)
     );
   }
 
@@ -270,16 +297,18 @@
     return "caldav-assistant-log-" + Date.now() + "-" + Math.random().toString(16).slice(2);
   }
 
-  async function findDailyLogPost(title) {
+  async function findDailyLogPost(date = new Date()) {
     const posts = await request(
-      "/posts?context=edit&per_page=100&search=" + encodeURIComponent(title)
+      "/posts?context=edit&per_page=100&search=" +
+      encodeURIComponent(dailyLogSearchText(date))
     );
-    return (Array.isArray(posts) ? posts : []).find(post => rawTitle(post) === title) || null;
+    return (Array.isArray(posts) ? posts : [])
+      .find(post => matchesDailyLogTitle(rawTitle(post), date)) || null;
   }
 
-  async function ensureDailyLogPost() {
-    const title = dailyLogTitle();
-    let post = await findDailyLogPost(title);
+  async function ensureDailyLogPost(date = new Date()) {
+    const title = dailyLogTitle(date);
+    let post = await findDailyLogPost(date);
     if (post) return {post, title, created: false};
 
     post = await request("/posts", {
@@ -298,23 +327,61 @@
     return {post: read, title, created: true};
   }
 
-  function buildLogAppend(content, media, marker) {
+  function currentTimeText(date = new Date()) {
+    return (
+      String(date.getHours()).padStart(2, "0") + ":" +
+      String(date.getMinutes()).padStart(2, "0")
+    );
+  }
+
+  function mediaBlock(item) {
+    const id = Number(item.id || 0);
+    const url = escapeHtml(item.sourceUrl || "");
+    const filename = escapeHtml(item.filename || "附件");
+    const mime = String(item.mimeType || "").toLocaleLowerCase();
+
+    if (mime.startsWith("image/")) {
+      return (
+        '<!-- wp:image {"id":' + id + ',"sizeSlug":"large"} -->\n' +
+        '<figure class="wp-block-image size-large"><img src="' + url +
+        '" alt="' + filename + '" class="wp-image-' + id + '"/></figure>\n' +
+        '<!-- /wp:image -->'
+      );
+    }
+    if (mime.startsWith("video/")) {
+      return (
+        '<!-- wp:video {"id":' + id + '} -->\n' +
+        '<figure class="wp-block-video"><video controls src="' + url +
+        '"></video></figure>\n<!-- /wp:video -->'
+      );
+    }
+    if (mime.startsWith("audio/")) {
+      return (
+        '<!-- wp:audio {"id":' + id + '} -->\n' +
+        '<figure class="wp-block-audio"><audio controls src="' + url +
+        '"></audio></figure>\n<!-- /wp:audio -->'
+      );
+    }
+    return (
+      '<!-- wp:file {"id":' + id + ',"href":"' + url + '"} -->\n' +
+      '<div class="wp-block-file"><a href="' + url + '">' + filename +
+      '</a></div>\n<!-- /wp:file -->'
+    );
+  }
+
+  function buildLogAppend(content, media, marker, date = new Date()) {
     const blocks = [`<!-- ${marker} -->`];
     const text = String(content || "").trim();
     if (text) {
       blocks.push(
         "<!-- wp:paragraph -->\n<p>" +
-        escapeHtml(text).replace(/\\n/g, "<br>") +
+        currentTimeText(date) + " " +
+        escapeHtml(text).replace(/\n/g, "<br>") +
         "</p>\n<!-- /wp:paragraph -->"
       );
     }
-    if (media.length) {
-      const items = media.map(item =>
-        '<li><a href="' + escapeHtml(item.sourceUrl || "") + '">' +
-        escapeHtml(item.filename || "附件") +
-        "</a></li>"
-      ).join("");
-      blocks.push("<!-- wp:list -->\n<ul>" + items + "</ul>\n<!-- /wp:list -->");
+    for (const item of media || []) {
+      blocks.push(mediaBlock(item));
     }
     return blocks.join("\n");
   }
@@ -360,6 +427,7 @@
           id: uploaded.id,
           filename: file.name || "attachment",
           sourceUrl: uploaded.source_url || "",
+          mimeType: file.type || uploaded.mime_type || "application/octet-stream",
           parent: postId,
         };
         result.media.push(item);

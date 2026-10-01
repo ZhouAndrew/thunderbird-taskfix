@@ -199,7 +199,12 @@ setTimeout(() => {
 background = root / "background.js"
 background.write_text(background.read_text() + r'''
 setTimeout(() => {
-  browser.tabs.create({url: browser.runtime.getURL("tools.html#wordpress")});
+  browser.windows.create({
+    url: browser.runtime.getURL("tools.html#wordpress"),
+    type: "popup",
+    width: 900,
+    height: 700,
+  });
 }, 1500);
 ''' + "\n")
 PY

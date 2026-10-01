@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>CalDAV Assistant · 工具</title>
+  <link rel="stylesheet" href="workspace.css">
+</head>
+<body>
+<main>
+  <header class="app-header"><h1>工具</h1></header>
+  <nav class="tool-nav">
+    <a href="workspace.html">工作</a>
+    <a href="today.html">今天</a>
+    <a href="record.html">记录</a>
+    <a href="logs.html">日志</a>
+    <a class="active" href="tools.html">工具</a>
+  </nav>
+
+  <div class="tool-grid">
+    <section class="card">
+      <h2>设置</h2>
+      <div class="form-grid">
+        <label>Task Calendar
+          <select id="task-calendar"></select>
+        </label>
+        <label>Work Calendar
+          <select id="work-calendar"></select>
+        </label>
+        <label>WordPress URL<input id="wp-url" placeholder="http://server/wordpress"></label>
+        <label>WordPress 用户名<input id="wp-user"></label>
+        <label>Application Password<input id="wp-password" type="password"></label>
+      </div>
+      <div class="tool-actions"><button id="save-settings">保存设置</button></div>
+      <div id="save-result" class="result-box"></div>
+    </section>
+
+    <section class="card">
+      <h2>连接测试</h2>
+      <p class="muted">完整 Calendar 测试只创建临时 TEST VEVENT，不创建 Task；完整 WordPress 测试会创建并清理临时 Draft Post 和测试图片。</p>
+      <div class="tool-actions">
+        <button id="calendar-quick">Calendar 快速测试</button>
+        <button id="calendar-full">Calendar 完整读写</button>
+        <button id="wp-quick">WordPress 快速测试</button>
+        <button id="wp-full">WordPress 完整读写</button>
+      </div>
+      <div id="test-result" class="result-box">尚未测试。</div>
+      <p><a href="logs.html">查看详细日志</a></p>
+    </section>
+  </div>
+</main>
+<script src="core/storage.js"></script>
+<script src="core/executor.js"></script>
+<script src="core/connection.js"></script>
+<script src="core/wordpress.js"></script>
+<script src="tools.js"></script>
+</body>
+</html>

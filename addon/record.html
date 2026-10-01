@@ -1,15 +1,46 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>CalDAV Assistant · 记录</title><link rel="stylesheet" href="workspace.css"></head>
-<body><main>
-<header class="topbar"><div><h1>WordPress 记录</h1><p>长期记录工具。它和 Task 状态流程分开。</p></div></header>
-<nav class="tool-nav"><a href="workspace.html">工作</a><a class="active" href="record.html">记录</a><a href="today.html">今天</a><a href="connections.html">连接</a><a href="logs.html">日志</a></nav>
-<div class="tool-grid">
-<section class="card"><h2>写入记录</h2><div class="form-grid">
-<label>标题<input id="title"></label>
-<label>正文<textarea id="content"></textarea></label>
-<label>状态<select id="post-status"><option value="draft">Draft</option><option value="publish">Publish</option></select></label>
-<label>附件<input id="files" type="file" multiple></label>
-</div><div class="tool-actions"><button id="submit">写入 WordPress</button></div></section>
-<section class="card"><h2>写入回执</h2><div id="result">尚未写入。</div></section>
-</div>
-</main><script src="core/storage.js"></script><script src="core/wordpress.js"></script><script src="record.js"></script></body></html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>CalDAV Assistant · 记录</title>
+  <link rel="stylesheet" href="workspace.css">
+</head>
+<body>
+<main>
+  <header class="app-header"><h1>记录</h1></header>
+  <nav class="tool-nav">
+    <a href="workspace.html">工作</a>
+    <a href="today.html">今天</a>
+    <a class="active" href="record.html">记录</a>
+    <a href="logs.html">日志</a>
+    <a href="tools.html">工具</a>
+  </nav>
+
+  <div class="tool-grid">
+    <section class="card">
+      <div class="form-grid">
+        <label>标题<input id="title"></label>
+        <label>正文<textarea id="content"></textarea></label>
+        <label>状态
+          <select id="post-status">
+            <option value="draft">Draft</option>
+            <option value="publish">Publish</option>
+          </select>
+        </label>
+        <label>附件<input id="files" type="file" multiple></label>
+      </div>
+      <div class="tool-actions"><button id="submit">写入 WordPress</button></div>
+    </section>
+
+    <section class="card">
+      <h2>最近结果</h2>
+      <div id="result">尚未写入。</div>
+      <p><a href="logs.html">查看详细日志</a></p>
+    </section>
+  </div>
+</main>
+<script src="core/storage.js"></script>
+<script src="core/wordpress.js"></script>
+<script src="record.js"></script>
+</body>
+</html>

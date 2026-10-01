@@ -9,6 +9,10 @@ on:
       - "feat/caldav-assistant-guided-*"
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   real-thunderbird:
     name: real-thunderbird (${{ matrix.thunderbird }}, ${{ matrix.timezone }})

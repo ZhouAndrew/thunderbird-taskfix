@@ -281,6 +281,7 @@ async function httpRequestApi(details = {}) {
 }
 
 async function readPipeText(pipe) {
+  if (!pipe || typeof pipe.readString !== "function") return "";
   let output = "";
   let chunk;
   while ((chunk = await pipe.readString())) output += chunk;
@@ -352,6 +353,7 @@ async function runWpCliApi(details = {}) {
     const proc = await Subprocess.call({
       command,
       arguments: args,
+      stdout: "pipe",
       stderr: "pipe",
     });
     proc.stdin.close();
@@ -429,6 +431,8 @@ async function runWordPressHelperApi(details = {}) {
     const proc = await Subprocess.call({
       command: file.path,
       arguments: [],
+      stdout: "pipe",
+      stderr: "pipe",
     });
     proc.stdin.close();
     const [stdout, stderr, status] = await Promise.all([

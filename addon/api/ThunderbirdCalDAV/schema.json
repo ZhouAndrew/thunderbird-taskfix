@@ -291,6 +291,21 @@
         }
       },
       {
+        "name": "curlRequest",
+        "type": "function",
+        "async": true,
+        "description": "Perform a local-only HTTPS REST request with explicit certificate verification bypass. Restricted to .local, localhost, loopback and private LAN IPv4 hosts.",
+        "parameters": [
+          {
+            "name": "details",
+            "type": "any"
+          }
+        ],
+        "returns": {
+          "type": "any"
+        }
+      },
+      {
         "name": "runWpCli",
         "type": "function",
         "async": true,

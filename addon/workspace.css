@@ -43,6 +43,37 @@ h1, h2, h3, p { margin-top: 0; }
 }
 .notice.error { border-color: #b33; }
 .notice.warning { border-color: #9a6b00; }
+.button-link {
+  display: inline-block;
+  color: inherit;
+  text-decoration: none;
+  background: Field;
+  border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+  border-radius: 7px;
+  padding: 7px 9px;
+}
+.current-work-card {
+  max-width: 760px;
+}
+.subpage-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.subpage-head h2 {
+  margin: 0;
+}
+.current-strip {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, CanvasText 16%, transparent);
+  border-radius: 8px;
+}
 .card {
   border: 1px solid color-mix(in srgb, CanvasText 16%, transparent);
   border-radius: 10px;
@@ -129,7 +160,7 @@ h1, h2, h3, p { margin-top: 0; }
   justify-content: space-between;
   gap: 10px;
 }
-.section-title h3 { margin-bottom: 8px; }
+.section-title h2, .section-title h3 { margin-bottom: 8px; }
 .result-summary { font-weight: 650; margin-bottom: 7px; }
 .result-summary.ok { color: color-mix(in srgb, CanvasText 85%, #16863b 15%); }
 .result-summary.fail { color: color-mix(in srgb, CanvasText 70%, #b33 30%); }

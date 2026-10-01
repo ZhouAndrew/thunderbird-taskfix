@@ -15,6 +15,8 @@ with zipfile.ZipFile(path) as z:
         "workspace.html",
         "workspace.css",
         "workspace.js",
+        "task-picker.html",
+        "task-picker.js",
         "record.html",
         "record.js",
         "today.html",
@@ -37,7 +39,7 @@ with zipfile.ZipFile(path) as z:
 
     manifest = json.loads(z.read("manifest.json"))
     assert manifest["name"] == "CalDAV Assistant Experimental"
-    assert manifest["version"] == "0.3.10"
+    assert manifest["version"] == "0.3.11"
     assert manifest["browser_specific_settings"]["gecko"]["id"] == (
         "ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net"
     )
@@ -56,6 +58,8 @@ with zipfile.ZipFile(path) as z:
     schema = z.read("api/ThunderbirdCalDAV/schema.json").decode()
     workspace_html = z.read("workspace.html").decode()
     workspace = z.read("workspace.js").decode()
+    task_picker_html = z.read("task-picker.html").decode()
+    task_picker = z.read("task-picker.js").decode()
     storage = z.read("core/storage.js").decode()
     executor = z.read("core/executor.js").decode()
     connection = z.read("core/connection.js").decode()
@@ -89,35 +93,41 @@ with zipfile.ZipFile(path) as z:
     assert "diagnosticsInfo" in logs
     assert "技术诊断" in logs_html
 
-    # Simple Work page contract.
+    # Segmented Work UI contract: current work and Task selection are separate pages.
     assert "工作" in workspace_html
     assert "今天" in workspace_html
     assert "记录" in workspace_html
     assert "日志" in workspace_html
     assert "工具" in workspace_html
-    assert "最近结果" in workspace_html
-    assert "搜索 Task" in workspace_html
-    assert "selected-uid" not in workspace_html
-    assert "work-calendar" not in workspace_html
-    assert 'id="task-view"' in workspace_html
-    assert 'id="task-calendar-filter"' in workspace_html
-    assert ">未完成<" in workspace_html
-    assert "VTODO" not in workspace_html
-    assert 'id="selected-flow-state"' not in workspace_html
-    assert ">Assistant<" not in workspace_html
-    assert "JSON.stringify(item.details" not in workspace
-    assert "AssistantExecutor.start" in workspace
+    assert "当前工作" in workspace_html
+    assert 'href="task-picker.html"' in workspace_html
+    assert "搜索 Task" not in workspace_html
+    assert "最近结果" not in workspace_html
+    assert 'id="task-view"' not in workspace_html
+    assert 'id="task-calendar-filter"' not in workspace_html
+    assert "AssistantExecutor.start" not in workspace
     assert "AssistantExecutor.pause" in workspace
     assert "AssistantExecutor.resume" in workspace
     assert "AssistantExecutor.complete" in workspace
     assert "AssistantExecutor.cancel" in workspace
-    assert "结果已写入日志" in workspace
     assert "resolveWorkCalendar" in workspace
-    assert 'state.taskView = state.settings.taskView || "incomplete"' in workspace
-    assert 'view === "completed"' in workspace
-    assert 'view === "overdue"' in workspace
-    assert "打开设置" in workspace
     assert "browser.storage.onChanged" in workspace
+
+    assert "选择 Task" in task_picker_html
+    assert "搜索 Task" in task_picker_html
+    assert 'id="task-view"' in task_picker_html
+    assert 'id="task-calendar-filter"' in task_picker_html
+    assert ">未完成<" in task_picker_html
+    assert "最近结果" not in task_picker_html
+    assert "AssistantExecutor.putAside" in task_picker
+    assert "AssistantExecutor.start" in task_picker
+    assert "换下当前 Task" in task_picker
+    assert "开始这个 Task" in task_picker
+    assert "先把“" in task_picker
+    assert "resolveWorkCalendar" in task_picker
+    assert 'state.taskView = state.settings.taskView || "incomplete"' in task_picker
+    assert 'view === "completed"' in task_picker
+    assert 'view === "overdue"' in task_picker
 
     # One simple persistence function freezes log-before-display order.
     assert "persistResult" in storage
@@ -196,4 +206,4 @@ with zipfile.ZipFile(path) as z:
     assert "apply.sh" not in names
     assert "patch_omnijar.py" not in names
 
-print("caldav-assistant-experimental-0.3.10-xpi-contract: PASS")
+print("caldav-assistant-experimental-0.3.11-xpi-contract: PASS")

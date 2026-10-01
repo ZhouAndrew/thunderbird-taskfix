@@ -145,17 +145,17 @@ async function runWorkflow(action) {
     receipt = await persistUiFailure(action, task, error);
   }
 
+  await refreshAll();
+
   if (receipt.success) {
     showNotice("操作已完成。");
   } else {
     showNotice(receipt.error || receipt.summary || "操作失败。", true);
   }
-  await refreshAll();
 }
 
 async function refreshAll() {
   try {
-    const selectedRef = state.runtime?.currentTask || null;
     state.calendars = await browser.ThunderbirdCalDAV.listCalendars();
     state.tasks = await browser.ThunderbirdCalDAV.listTasks();
     state.runtime = await AssistantStorage.getRuntime();
@@ -164,8 +164,6 @@ async function refreshAll() {
 
     if (state.runtime.currentTask && !state.current) {
       showNotice("当前 Task 暂时无法从 Calendar 读取。", true);
-    } else if (!selectedRef || !state.runtime.currentTask || !sameTaskRef(selectedRef, state.runtime.currentTask)) {
-      clearNotice();
     }
 
     render();

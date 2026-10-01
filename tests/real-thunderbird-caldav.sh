@@ -672,8 +672,8 @@ async function __runRealAcceptance() {
   });
   __acceptanceAssert(spaces.length === 1, "Thunderbird CalDAV Space was not created");
 
-  __acceptanceStage = "recheck-calendar-seed";
-  await __waitForAcceptanceCalendar();
+  __acceptanceStage = "wait-calendar-seed";
+  const calendar = await __waitForAcceptanceCalendar();
 
   __acceptanceStage = "task-picker-start";
   const pickerStartTab = await browser.tabs.create({
@@ -831,8 +831,8 @@ async function __runRealAcceptance() {
     "Diagnostics did not redact a password field"
   );
 
-  __acceptanceStage = "wait-calendar-seed";
-  const calendar = await __waitForAcceptanceCalendar();
+  __acceptanceStage = "recheck-calendar-seed";
+  await __waitForAcceptanceCalendar();
   __acceptanceAssert(calendar.type === "caldav", "Configured calendar is not CalDAV");
   __acceptanceAssert(!calendar.readOnly, "Configured CalDAV calendar became read-only");
   __acceptanceAssert(calendar.supportsTasks, "CalDAV calendar does not support VTODO");

@@ -2,6 +2,18 @@
 
 const SPACE_NAME = "thunderbird_caldav_lab";
 
+async function diagnostic(event, details = {}) {
+  try {
+    await browser.ThunderbirdCalDAV.writeDiagnostic(
+      "background",
+      event,
+      details
+    );
+  } catch (error) {
+    console.warn("[CalDAVAssistant] diagnostics unavailable", error);
+  }
+}
+
 async function activateTaskEnhancements() {
   await browser.TaskFix.activate();
 }
@@ -34,8 +46,23 @@ async function ensureWorkspace() {
 }
 
 async function startup() {
-  await activateTaskEnhancements();
-  await ensureWorkspace();
+  const manifest = browser.runtime.getManifest();
+  await diagnostic("startup.begin", {version: manifest.version});
+  try {
+    await activateTaskEnhancements();
+    const space = await ensureWorkspace();
+    await diagnostic("startup.success", {
+      version: manifest.version,
+      spaceId: space?.id ?? null,
+    });
+  } catch (error) {
+    await diagnostic("startup.error", {
+      version: manifest.version,
+      name: error?.name || "Error",
+      message: error?.message || String(error),
+    });
+    throw error;
+  }
 }
 
 browser.runtime.onInstalled.addListener(() => startup().catch(console.error));

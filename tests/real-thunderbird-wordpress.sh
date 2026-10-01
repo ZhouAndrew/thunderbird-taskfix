@@ -199,13 +199,13 @@ month_abbr="$(date +%b)"
 day="$((10#$(date +%d)))"
 weekday="$(date +%A)"
 year="$(date +%Y)"
-"$WPCLI_BRIDGE" --path=/var/www/html post list \
+json="$("$WPCLI_BRIDGE" --path=/var/www/html post list \
   --post_type=post --post_status=any \
-  --fields=ID,post_title --format=json |
-python3 - "$month_full" "$month_abbr" "$day" "$weekday" "$year" <<'PY'
+  --fields=ID,post_title --format=json)"
+python3 - "$month_full" "$month_abbr" "$day" "$weekday" "$year" "$json" <<'PY'
 import json, re, sys
-month_full, month_abbr, day, weekday, year = sys.argv[1:]
-items = json.load(sys.stdin)
+month_full, month_abbr, day, weekday, year, raw = sys.argv[1:]
+items = json.loads(raw)
 for item in items:
     title = str(item.get("post_title") or "")
     folded = title.casefold()

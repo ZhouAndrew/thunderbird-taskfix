@@ -85,9 +85,15 @@ temporary Draft Post -> read -> update -> read -> temporary media -> read -> del
 
 ## WordPress
 
-`record.html` explicitly creates long-form WordPress records. Completing a Task does not implicitly create a WordPress Post.
+`record.html` is an append-only daily log UI. It has no per-entry title or post-status fields.
 
-The visible result reports concrete Post ID / Media ID values; the full request/result record stays in Logs.
+Normal Record flow:
+
+today's exact daily title -> find published post -> create it only if absent -> upload optional media to that post -> append one Gutenberg log entry -> read back and verify marker
+
+For example, the daily post title can be `October 1 Thursday 2026`. Multiple Record submissions on the same day reuse the same Post ID. Attachments are parented to that daily post and linked from the appended entry.
+
+The visible result reports the daily Post ID / Media ID values; the full request/result record stays in Logs. Completing a Task still does not implicitly create a WordPress post.
 
 ## Data ownership
 

@@ -176,6 +176,18 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
   assert(firstLog.media.every(item => item.parent === firstLog.post.id), "media parent Post ID was not reported");
 
   const dailyPostId = firstLog.post.id;
+
+  // The older wp-cli finder accepts month abbreviation, arbitrary spacing,
+  // and title token order. Keep the add-on compatible with those existing
+  // daily posts instead of creating a duplicate.
+  const createdTitleParts = String(firstLog.post.title || "").trim().split(/\s+/);
+  assert(createdTitleParts.length === 4, "unexpected generated daily title");
+  const [monthName, dayNumber, weekdayName, yearNumber] = createdTitleParts;
+  posts.get(dailyPostId).title = {
+    raw: weekdayName + " " + monthName.slice(0, 3) + " " + dayNumber + " " + yearNumber,
+    rendered: weekdayName + " " + monthName.slice(0, 3) + " " + dayNumber + " " + yearNumber,
+  };
+
   const secondLog = await AssistantWordPress.createLog({
     content: "Second work entry.",
     files: [],
@@ -186,10 +198,10 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
   assert(posts.size === 1, "one-by-one logging created more than one daily WordPress post");
   const dailyPost = posts.get(dailyPostId);
   const dailyContent = dailyPost?.content?.raw || "";
-  const title = dailyPost?.title?.raw || dailyPost?.title?.rendered || "";
+  const title = firstLog.post.title || "";
   assert(
     /^[A-Za-z]+ \d{1,2}  [A-Za-z]+  \d{4}$/.test(title),
-    "daily WordPress post title no longer matches the existing helper format"
+    "new daily WordPress post title no longer matches the existing helper format"
   );
   assert(dailyContent.includes("Completed work."), "first log entry was lost");
   assert(dailyContent.includes("Second work entry."), "second log entry was not appended");

@@ -15,6 +15,8 @@ const storageWrites = [];
 let lastWpCliCall = null;
 let httpRequestCalls = 0;
 let wpCliCalls = 0;
+let curlRequestCalls = 0;
+let lastCurlRequest = null;
 let forceRestNetworkFailure = false;
 global.browser = {
   storage: {
@@ -32,6 +34,28 @@ global.browser = {
       if (forceRestNetworkFailure) {
         throw new Error("Privileged HTTP request failed: network status 2152398868");
       }
+      const headers = new Headers(details.headers || {});
+      let body = details.bodyText ?? undefined;
+      if (details.bodyBase64) {
+        body = Uint8Array.from(Buffer.from(details.bodyBase64, "base64"));
+      }
+      const response = await global.fetch(details.url, {
+        method: details.method || "GET",
+        headers,
+        body,
+      });
+      return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        url: response.url || details.url,
+        text: await response.text(),
+      };
+    },
+    async curlRequest(details = {}) {
+      curlRequestCalls++;
+      lastCurlRequest = details;
+      assert(details.insecureTls === true, "insecure curl bridge was called without explicit opt-in");
       const headers = new Headers(details.headers || {});
       let body = details.bodyText ?? undefined;
       if (details.bodyBase64) {
@@ -232,6 +256,44 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
     "explicit Application Password mode unexpectedly fell back to WP-CLI"
   );
   forceRestNetworkFailure = false;
+
+  const httpBeforeInsecure = httpRequestCalls;
+  const wpCliBeforeInsecure = wpCliCalls;
+  const curlBeforeInsecure = curlRequestCalls;
+  await AssistantWordPress.saveConfig({
+    transport: "application-password",
+    baseUrl: "https://andrew.local",
+    username: "acceptance",
+    applicationPassword: "secret-app-password",
+    allowUntrustedTls: true,
+    wordpressPath: "/var/www/html/wordpress",
+    wpCliCommand: "wp",
+  });
+  const insecureQuick = await AssistantWordPress.quickTest();
+  assert(insecureQuick.success, "explicit local insecure HTTPS REST mode failed");
+  assert(insecureQuick.transport === "application-password", "insecure REST changed transport identity");
+  assert(insecureQuick.tlsVerification === "disabled-local", "insecure REST was not reported transparently");
+  assert(curlRequestCalls === curlBeforeInsecure + 1, "insecure REST did not use curl bridge");
+  assert(httpRequestCalls === httpBeforeInsecure, "insecure REST unexpectedly used Thunderbird HTTP bridge");
+  assert(wpCliCalls === wpCliBeforeInsecure, "insecure REST unexpectedly fell back to WP-CLI");
+  assert(lastCurlRequest?.url?.startsWith("https://andrew.local/"), "insecure REST used unexpected URL");
+
+  await AssistantWordPress.saveConfig({
+    transport: "application-password",
+    baseUrl: "https://example.com",
+    username: "acceptance",
+    applicationPassword: "secret-app-password",
+    allowUntrustedTls: true,
+    wordpressPath: "/var/www/html/wordpress",
+    wpCliCommand: "wp",
+  });
+  const publicInsecure = await AssistantWordPress.quickTest();
+  assert(!publicInsecure.success, "insecure TLS mode was allowed for a public hostname");
+  assert(
+    /只允许|local|私有|局域网/i.test(publicInsecure.summary),
+    "public-host insecure TLS rejection was not explained"
+  );
+  assert(curlRequestCalls === curlBeforeInsecure + 1, "public-host rejection reached curl bridge");
 
   await AssistantWordPress.saveConfig({
     transport: "wp-cli",

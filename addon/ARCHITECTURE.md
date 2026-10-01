@@ -1,4 +1,4 @@
-# CalDAV Assistant Experimental 0.3.6 — simple program boundary
+# CalDAV Assistant Experimental 0.3.7 — simple program boundary
 
 The design goal is deliberately ordinary: a small UI, a set of plain functions, a few plain objects, strict read-back checks, and persistent logs.
 
@@ -10,6 +10,9 @@ existing Task -> select -> Start -> Working -> Pause/Resume -> Complete or Cance
 
 Rules:
 
+- the Work page defaults to the Incomplete view;
+- completed/cancelled Tasks remain available through explicit views instead of being deleted;
+- the Work page may temporarily switch view/Calendar without changing persistent defaults;
 - the Work page never creates a Task;
 - before a Task is selected there are no workflow buttons;
 - only actions valid for the current state are shown;
@@ -59,9 +62,16 @@ If the persistent audit write fails, `logSaved=false` and the UI must say so ins
 
 The Logs page owns full technical detail. The Work page only shows a short result plus a link to Logs.
 
-## Tools
+## Guided defaults and Tools
 
 `tools.html` owns settings and connection tests.
+
+The default Task view and default Task Calendar are ordinary `browser.storage.local` settings. The Calendar value is Thunderbird's existing Calendar id; the add-on does not maintain a second Calendar registry.
+
+Saving those defaults writes one settings undo snapshot. Undo restores the previous Assistant settings object. If a configured Task Calendar disappears, Work temporarily shows All Calendars and links the user back to Tools; it never silently replaces the saved preference.
+
+A missing Work Calendar may be inferred for one workflow action, but that inferred choice is not persisted automatically.
+
 
 Calendar full test:
 

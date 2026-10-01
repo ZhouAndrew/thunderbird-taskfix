@@ -70,8 +70,7 @@ async function saveSettings() {
       operation: "save defaults",
       success: true,
       details: {
-        previous: changed.previous,
-        next: changed.next,
+        keys: changed.keys,
       },
     }],
   };
@@ -100,7 +99,7 @@ async function undoSettings() {
       component: "Settings",
       operation: "undo defaults",
       success: true,
-      details: {restored},
+      details: {keys: ["taskView", "taskCalendarId", "workCalendarId"]},
     }],
   }, "system");
 

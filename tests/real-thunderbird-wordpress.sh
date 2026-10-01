@@ -220,11 +220,8 @@ setTimeout(() => {
 background = root / "background.js"
 background.write_text(background.read_text() + r'''
 setTimeout(() => {
-  browser.windows.create({
+  browser.tabs.create({
     url: browser.runtime.getURL("tools.html#wordpress"),
-    type: "popup",
-    width: 900,
-    height: 700,
   });
 }, 1500);
 ''' + "\n")
@@ -300,10 +297,7 @@ done
 [[ -f "$TMP/quick-ready" ]] || { echo "Tools did not become ready"; exit 1; }
 
 echo "== Native keypress: start permissions.request from a real user event =="
-WIN="$(xdotool search --onlyvisible --name 'CalDAV Assistant.*工具' | tail -n1 || true)"
-if [[ -z "$WIN" ]]; then
-  WIN="$(xdotool search --onlyvisible --pid "$TB_PID" | tail -n1)"
-fi
+WIN="$(xdotool search --onlyvisible --pid "$TB_PID" | tail -n1)"
 test -n "$WIN"
 echo "WordPress tools popup window: $WIN"
 xdotool getwindowgeometry "$WIN" || true

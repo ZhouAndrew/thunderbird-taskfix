@@ -432,8 +432,7 @@ function writeTempText(filename, text) {
 
 function curlQuote(value) {
   const text = String(value ?? "");
-  if (/[
-]/.test(text)) {
+  if (/[\r\n]/.test(text)) {
     throw new ExtensionError("curl config values must not contain newlines");
   }
   return '"' + text.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
@@ -511,9 +510,7 @@ async function curlRequestApi(details = {}) {
     for (const [name, value] of Object.entries(details.headers || {})) {
       const headerName = String(name);
       const headerValue = String(value);
-      if (/[
-]/.test(headerName) || /[
-]/.test(headerValue)) {
+      if (/[\r\n]/.test(headerName) || /[\r\n]/.test(headerValue)) {
         throw new ExtensionError("HTTP headers must not contain newlines");
       }
       configLines.push("header = " + curlQuote(headerName + ": " + headerValue));

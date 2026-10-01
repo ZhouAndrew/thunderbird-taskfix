@@ -6,8 +6,8 @@ var {
 var {
   ExtensionUtils: { ExtensionError },
 } = ChromeUtils.importESModule("resource://gre/modules/ExtensionUtils.sys.mjs");
-var { Services } = ChromeUtils.importESModule(
-  "resource://gre/modules/Services.sys.mjs"
+var { Subprocess } = ChromeUtils.importESModule(
+  "resource://gre/modules/Subprocess.sys.mjs"
 );
 var { cal } = ChromeUtils.importESModule(
   "resource:///modules/calendar/calUtils.sys.mjs"
@@ -177,9 +177,9 @@ async function httpRequestApi(details = {}) {
   }
 
   const method = String(details.method || "GET").toUpperCase();
-  const headers = new Headers();
+  const headers = {};
   for (const [name, value] of Object.entries(details.headers || {})) {
-    headers.set(String(name), String(value));
+    headers[String(name)] = String(value);
   }
 
   let body;
@@ -193,40 +193,38 @@ async function httpRequestApi(details = {}) {
   appendDiagnosticLog("http", "request.start", {
     url,
     method,
-    headers: Object.fromEntries(headers),
-    bodyBytes: details.bodyBase64 ? String(details.bodyBase64).length : (details.bodyText ? String(details.bodyText).length : 0),
+    headers,
+    bodyBytes: details.bodyBase64
+      ? Math.floor(String(details.bodyBase64).length * 0.75)
+      : (details.bodyText ? String(details.bodyText).length : 0),
   });
 
   try {
-    const systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
-    const request = new Request(url, {
+    // This code runs in the privileged Experiment parent scope. Keeping the
+    // request here avoids Thunderbird 152/153 WebExtension-page CORS regressions
+    // while still using Thunderbird's normal TLS/certificate stack.
+    const response = await fetch(url, {
       method,
       headers,
       body: method === "GET" || method === "HEAD" ? undefined : body,
       credentials: "omit",
       redirect: "follow",
       cache: "no-store",
-      referrerPolicy: "no-referrer",
-      mode: "no-cors",
-      triggeringPrincipal: systemPrincipal,
-      neverTaint: true,
     });
-    const response = await fetch(request);
     const text = await response.text();
-    const result = {
-      ok: response.ok,
-      status: response.status,
-      statusText: response.statusText,
-      url: response.url || url,
-      text,
-    };
     appendDiagnosticLog("http", "request.success", {
       url,
       method,
       status: response.status,
       durationMs: Date.now() - started,
     });
-    return result;
+    return {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      url: response.url || url,
+      text,
+    };
   } catch (error) {
     appendDiagnosticLog("http", "request.error", {
       url,
@@ -237,6 +235,114 @@ async function httpRequestApi(details = {}) {
     throw new ExtensionError(
       "Privileged HTTP request failed: " + String(error?.message || error)
     );
+  }
+}
+
+async function readPipeText(pipe) {
+  let output = "";
+  let chunk;
+  while ((chunk = await pipe.readString())) output += chunk;
+  return output;
+}
+
+function tempFileFromBase64(filename, base64) {
+  const directoryService = Cc["@mozilla.org/file/directory_service;1"]
+    .getService(Ci.nsIProperties);
+  const file = directoryService.get("TmpD", Ci.nsIFile);
+  const safe = String(filename || "caldav-assistant-upload.bin")
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .slice(0, 120) || "caldav-assistant-upload.bin";
+  file.append(safe);
+  file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o600);
+
+  const binary = atob(String(base64 || ""));
+  const stream = Cc["@mozilla.org/network/file-output-stream;1"]
+    .createInstance(Ci.nsIFileOutputStream);
+  stream.init(file, 0x02 | 0x08 | 0x20, 0o600, 0);
+  stream.write(binary, binary.length);
+  stream.close();
+  return file;
+}
+
+async function runWpCliApi(details = {}) {
+  const executable = String(details.executable || "wp").trim() || "wp";
+  const wordpressPath = String(details.wordpressPath || "").trim();
+  const rawArgs = Array.isArray(details.args)
+    ? details.args.map(value => String(value))
+    : [];
+
+  if (rawArgs.length > 200) {
+    throw new ExtensionError("Too many WP-CLI arguments");
+  }
+
+  let tempFile = null;
+  let args = rawArgs;
+  if (details.tempFileBase64) {
+    tempFile = tempFileFromBase64(
+      details.tempFileName || "caldav-assistant-upload.bin",
+      details.tempFileBase64
+    );
+    args = args.map(value =>
+      value === "__CALDAV_ASSISTANT_TEMP_FILE__" ? tempFile.path : value
+    );
+  }
+
+  if (wordpressPath) {
+    args = [`--path=${wordpressPath}`, ...args];
+  }
+
+  let command = executable;
+  if (!/[\\/]/.test(command)) {
+    command = await Subprocess.pathSearch(command);
+  }
+
+  const started = Date.now();
+  appendDiagnosticLog("wp-cli", "run.start", {
+    executable: command,
+    wordpressPath,
+    args,
+  });
+
+  try {
+    const proc = await Subprocess.call({
+      command,
+      arguments: args,
+    });
+    proc.stdin.close();
+
+    const [stdout, stderr, status] = await Promise.all([
+      readPipeText(proc.stdout),
+      readPipeText(proc.stderr),
+      proc.wait(),
+    ]);
+
+    const exitCode = Number(status?.exitCode ?? -1);
+    appendDiagnosticLog("wp-cli", "run.success", {
+      executable: command,
+      wordpressPath,
+      args,
+      exitCode,
+      durationMs: Date.now() - started,
+    });
+
+    return {exitCode, stdout, stderr};
+  } catch (error) {
+    appendDiagnosticLog("wp-cli", "run.error", {
+      executable: command,
+      wordpressPath,
+      args,
+      durationMs: Date.now() - started,
+      error,
+    });
+    throw new ExtensionError(
+      "WP-CLI process failed: " + String(error?.message || error)
+    );
+  } finally {
+    if (tempFile?.exists()) {
+      try {
+        tempFile.remove(false);
+      } catch (_error) {}
+    }
   }
 }
 
@@ -835,6 +941,7 @@ this.ThunderbirdCalDAV = class extends ExtensionAPI {
         clearDiagnostics: clearDiagnosticsApi,
         writeDiagnostic: writeDiagnosticApi,
         httpRequest: httpRequestApi,
+        runWpCli: runWpCliApi,
 
         onItemsChanged: new EventManager({
           context,

@@ -25,22 +25,23 @@ jobs:
           node --check addon/core/wordpress.js
           node --check addon/workspace.js
           node --check addon/logs.js
-          node --check addon/connections.js
+          node --check addon/tools.js
           node --check addon/record.js
           node --check addon/today.js
           node tests/taskfix-addon-harness.js
           node tests/direct-caldav-api-harness.js
           node tests/workflow-harness.js
+          node tests/connection-harness.js
           node tests/wordpress-connector-harness.js
           bash -n tests/real-thunderbird-caldav.sh
       - name: Build CalDAV Assistant Experimental XPI
         run: |
           chmod +x packaging/build-xpi.sh
-          packaging/build-xpi.sh /tmp/caldav-assistant-experimental-0.3.5.xpi
-          python3 tests/check-xpi.py /tmp/caldav-assistant-experimental-0.3.5.xpi
+          packaging/build-xpi.sh /tmp/caldav-assistant-experimental-0.3.6.xpi
+          python3 tests/check-xpi.py /tmp/caldav-assistant-experimental-0.3.6.xpi
       - name: Publish tested XPI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: caldav-assistant-experimental-0.3.5
-          path: /tmp/caldav-assistant-experimental-0.3.5.xpi
+          name: caldav-assistant-experimental-0.3.6
+          path: /tmp/caldav-assistant-experimental-0.3.6.xpi
           if-no-files-found: error

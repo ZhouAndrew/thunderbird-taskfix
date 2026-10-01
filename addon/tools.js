@@ -44,9 +44,12 @@ function renderResult(result) {
 
 async function saveWordPressFromForm() {
   await AssistantWordPress.saveConfig({
+    transport: $("wp-transport").value,
     baseUrl: $("wp-url").value,
     username: $("wp-user").value,
     applicationPassword: $("wp-password").value,
+    wordpressPath: $("wp-path").value,
+    wpCliExecutable: $("wp-cli").value,
   });
 }
 
@@ -141,9 +144,12 @@ async function load() {
     $("work-calendar").value = settings.workCalendarId;
   }
 
+  $("wp-transport").value = wp.transport || "auto";
   $("wp-url").value = wp.baseUrl || "";
   $("wp-user").value = wp.username || "";
   $("wp-password").value = wp.applicationPassword || "";
+  $("wp-path").value = wp.wordpressPath || "/var/www/html/wordpress";
+  $("wp-cli").value = wp.wpCliExecutable || "wp";
 
   $("undo-settings").hidden = !(await AssistantStorage.getSettingsUndo());
 

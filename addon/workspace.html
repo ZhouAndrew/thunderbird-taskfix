@@ -23,6 +23,16 @@
 
     <div class="work-layout">
       <section class="card task-browser">
+        <div class="task-filters">
+          <select id="task-view" aria-label="Task 视图">
+            <option value="incomplete">未完成</option>
+            <option value="today">今天</option>
+            <option value="overdue">已逾期</option>
+            <option value="completed">已完成</option>
+            <option value="all">全部</option>
+          </select>
+          <select id="task-calendar-filter" aria-label="Task Calendar"></select>
+        </div>
         <input id="task-search" type="search" placeholder="搜索 Task">
         <div id="task-list" class="item-list"></div>
       </section>

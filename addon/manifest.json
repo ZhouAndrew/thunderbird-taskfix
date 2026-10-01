@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "CalDAV Assistant Experimental",
   "description": "Simple state-driven CalDAV task workflow with verified Work sessions, persistent logs, connection tests and WordPress logging.",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "author": "ZhouAndrew",
   "background": {
     "scripts": [

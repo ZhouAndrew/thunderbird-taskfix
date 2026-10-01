@@ -13,6 +13,9 @@ if (!global.atob) global.atob = value => Buffer.from(value, "base64").toString("
 const local = {};
 const storageWrites = [];
 let lastWpCliCall = null;
+let httpRequestCalls = 0;
+let wpCliCalls = 0;
+let forceRestNetworkFailure = false;
 global.browser = {
   storage: {
     local: {
@@ -25,6 +28,10 @@ global.browser = {
   },
   ThunderbirdCalDAV: {
     async httpRequest(details = {}) {
+      httpRequestCalls++;
+      if (forceRestNetworkFailure) {
+        throw new Error("Privileged HTTP request failed: network status 2152398868");
+      }
       const headers = new Headers(details.headers || {});
       let body = details.bodyText ?? undefined;
       if (details.bodyBase64) {
@@ -44,6 +51,7 @@ global.browser = {
       };
     },
     async runWpCli(details = {}) {
+      wpCliCalls++;
       lastWpCliCall = details;
       const args = details.args || [];
       if (args[0] === "core" && args[1] === "is-installed") {
@@ -181,6 +189,49 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
   assert(quick.success, "WordPress REST quick test failed");
   assert(quick.transport === "application-password", "auto transport did not select Application Password");
   assert(quick.logSaved === true, "WordPress quick result was not persistently logged");
+
+  await AssistantWordPress.saveConfig({
+    transport: "auto",
+    baseUrl: "https://andrew.local",
+    username: "acceptance",
+    applicationPassword: "secret-app-password",
+    wordpressPath: "/var/www/html/wordpress",
+    wpCliCommand: "wp",
+  });
+  forceRestNetworkFailure = true;
+  const restCallsBeforeFallback = httpRequestCalls;
+  const wpCliCallsBeforeFallback = wpCliCalls;
+  const fallbackQuick = await AssistantWordPress.quickTest();
+  assert(fallbackQuick.success, "auto transport did not recover from REST network reset");
+  assert(fallbackQuick.transport === "wp-cli", "auto transport did not report WP-CLI fallback");
+  assert(httpRequestCalls === restCallsBeforeFallback + 1, "REST fallback did not start with one REST attempt");
+  assert(wpCliCalls > wpCliCallsBeforeFallback, "REST network reset did not invoke WP-CLI fallback");
+
+  const restCallsAfterFallback = httpRequestCalls;
+  const secondFallbackQuick = await AssistantWordPress.quickTest();
+  assert(secondFallbackQuick.success, "cached WP-CLI fallback quick test failed");
+  assert(secondFallbackQuick.transport === "wp-cli", "cached fallback stopped reporting WP-CLI");
+  assert(
+    httpRequestCalls === restCallsAfterFallback,
+    "cached WP-CLI fallback retried the broken REST transport"
+  );
+
+  await AssistantWordPress.saveConfig({
+    transport: "application-password",
+    baseUrl: "https://andrew.local",
+    username: "acceptance",
+    applicationPassword: "secret-app-password",
+    wordpressPath: "/var/www/html/wordpress",
+    wpCliCommand: "wp",
+  });
+  const wpCliCallsBeforeStrictRest = wpCliCalls;
+  const strictRestQuick = await AssistantWordPress.quickTest();
+  assert(!strictRestQuick.success, "explicit Application Password mode hid the REST network error");
+  assert(
+    wpCliCalls === wpCliCallsBeforeStrictRest,
+    "explicit Application Password mode unexpectedly fell back to WP-CLI"
+  );
+  forceRestNetworkFailure = false;
 
   await AssistantWordPress.saveConfig({
     transport: "wp-cli",

@@ -40,15 +40,26 @@
   }
 
   async function saveSettingsWithUndo(patch) {
-    const previous = await getSettings();
-    const next = {...previous, ...(patch || {})};
+    const current = await getSettings();
+    const changes = patch || {};
+    const keys = Object.keys(changes);
+    const previous = {};
+    const existed = {};
+
+    for (const key of keys) {
+      existed[key] = Object.prototype.hasOwnProperty.call(current, key);
+      if (existed[key]) previous[key] = current[key];
+    }
+
+    const next = {...current, ...changes};
     await setValue(KEY_SETTINGS_UNDO, {
+      keys,
       previous,
-      next,
+      existed,
       timestamp: nowIso(),
     });
     await setValue(KEY_SETTINGS, next);
-    return {previous, next};
+    return {keys, next};
   }
 
   async function getSettingsUndo() {
@@ -57,10 +68,27 @@
 
   async function undoSettings() {
     const snapshot = await getSettingsUndo();
-    if (!snapshot || !snapshot.previous) return null;
-    await setValue(KEY_SETTINGS, snapshot.previous);
+    if (!snapshot) return null;
+
+    // Compatibility with the short-lived early 0.3.7 development snapshot.
+    if (!Array.isArray(snapshot.keys) && snapshot.previous) {
+      await setValue(KEY_SETTINGS, snapshot.previous);
+      await setValue(KEY_SETTINGS_UNDO, null);
+      return snapshot.previous;
+    }
+
+    const current = await getSettings();
+    const restored = {...current};
+    for (const key of snapshot.keys || []) {
+      if (snapshot.existed?.[key]) {
+        restored[key] = snapshot.previous?.[key];
+      } else {
+        delete restored[key];
+      }
+    }
+    await setValue(KEY_SETTINGS, restored);
     await setValue(KEY_SETTINGS_UNDO, null);
-    return snapshot.previous;
+    return restored;
   }
 
   async function getRuntime() {

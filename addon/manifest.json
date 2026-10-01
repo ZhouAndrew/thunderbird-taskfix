@@ -50,8 +50,6 @@
     }
   },
   "permissions": [
-    "storage",
-    "http://*/*",
-    "https://*/*"
+    "storage"
   ]
 }

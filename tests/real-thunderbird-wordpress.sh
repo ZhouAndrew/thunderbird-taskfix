@@ -325,7 +325,16 @@ for _ in $(seq 1 50); do
 done
 [[ -f "$TMP/quick-clicked" ]] || { echo "Native click did not reach wp-quick"; exit 1; }
 sleep 1
-# Approve Thunderbird's optional host-permission doorhanger.
+echo "== Visible X11 windows after WordPress permission request =="
+for wid in $(xdotool search --onlyvisible --name ".*" 2>/dev/null || true); do
+  printf "%s | " "$wid"
+  xdotool getwindowname "$wid" 2>/dev/null || true
+done
+echo "== Active window =="
+ACTIVE_WIN="$(xdotool getactivewindow 2>/dev/null || true)"
+echo "$ACTIVE_WIN"
+[[ -n "$ACTIVE_WIN" ]] && xdotool getwindowname "$ACTIVE_WIN" 2>/dev/null || true
+# Try the active Thunderbird permission UI first.
 xdotool key Return
 
 for _ in $(seq 1 300); do

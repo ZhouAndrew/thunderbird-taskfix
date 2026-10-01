@@ -1,46 +1,80 @@
 # CalDAV Assistant Experimental
 
-Current build: **0.3.5** for official Thunderbird **153.0.2 through 153.1.x**.
+Current build: **0.3.6** for official Thunderbird **153.0.2 through 153.1.x**.
 
-This branch keeps the direct Thunderbird Calendar/Tasks provider architecture from the 0.3.x rewrite, but replaces the CRUD-lab workspace with the actual CalDAV Assistant workflow.
+0.3.6 deliberately removes developer-console style UI. The add-on remains a direct Thunderbird Calendar/Tasks provider client; the normal user experience is a small task workflow.
 
-## Main workflow
+## Work page
 
-The Work page consumes already existing VTODOs:
+The Work page consumes existing VTODOs:
 
-select existing Task -> Start -> Working -> Pause/Resume -> Complete or Cancel
+select Task -> Start -> Working -> Pause/Resume -> Complete or Cancel
 
-It does not create Tasks. Start/Resume create Work VEVENTs. Pause/Complete/Cancel close the current Work VEVENT. Every supported write is followed by provider read-back verification and a persistent on-screen receipt.
+It does not create Tasks.
 
-## Program blocks
+Before selection: no workflow buttons.
 
-- **Work**: Task lifecycle only.
-- **Executor**: performs Start/Pause/Resume/Complete/Cancel and verifies writes.
-- **Connections**: tests Thunderbird/CalDAV and WordPress read/write paths.
-- **Logs**: persistent audit, separate from the workflow UI.
-- **Record**: explicit WordPress post + attachment creation with Post/Media IDs in the receipt.
-- **Today**: workflow activity derived from the local audit.
+Selected idle Task: Start only.
 
-See ARCHITECTURE.md for the frozen responsibility boundary.
+Working Task: Pause / Complete / Cancel.
 
-## Direct Thunderbird architecture
+Paused Task: Resume / Complete / Cancel.
 
-The add-on uses ThunderbirdCalDAV Experiment API -> Thunderbird Calendar/Tasks provider -> configured CalDAV server. It uses cal.manager, getItemsAsArray(), getItem(), addItem(), modifyItem() and deleteItem().
+Completed or cancelled Task: no workflow buttons.
 
-There is no Native Host, no Python companion process, and no second CalDAV client.
+The Work page does **not** show UID, raw VTODO state, internal Assistant state, Work Calendar selectors, provider IDs, or JSON details.
 
-## Local auxiliary state
+## Five pages
 
-browser.storage.local stores only Assistant state such as current Task pointer, current Work VEVENT pointer, accumulated time, settings, latest receipt and audit history. Task/Event facts remain in Thunderbird/CalDAV.
+- **Work** — Task lifecycle.
+- **Today** — today's workflow activity.
+- **Record** — explicit WordPress log + attachments.
+- **Logs** — complete persistent audit + technical diagnostics.
+- **Tools** — settings and read/write connection tests.
 
-No success/failure information may exist only as a disappearing popup. The latest receipt remains visible on Work and full history is available on Logs.
+## Simple internals
 
-## Read/write diagnostics
+The core is plain functions plus a few plain JavaScript objects. There is no extra workflow framework or class hierarchy.
 
-The Calendar full test creates a temporary VEVENT only, then performs create -> read -> update -> read -> delete -> verify absence. It creates no VTODO.
+`core/executor.js` exposes Start/Pause/Resume/Complete/Cancel functions.
 
-The WordPress full test uses a temporary Draft post and test media, verifies both, then deletes them.
+`core/connection.js` tests Calendar reads/writes.
+
+`core/wordpress.js` talks to WordPress.
+
+`core/storage.js` stores settings/runtime/audit and enforces the log-before-display rule.
+
+## Reliability rules
+
+Data-changing Calendar paths use:
+
+write -> read back -> compare -> Result
+
+A Result is persisted to the audit log before it is returned to the UI. If logging itself fails, the visible Result says so.
+
+Start/Resume create Work VEVENTs. Pause/Complete/Cancel close them.
+
+Task/Event facts remain in Thunderbird/CalDAV.
+
+## Connection tests
+
+Calendar full test creates only a temporary VEVENT:
+
+create -> read -> update -> read -> delete -> verify absence
+
+It never creates a VTODO.
+
+WordPress full test uses a temporary Draft post + test media, verifies them, then deletes them.
+
+## Diagnostics
+
+The Logs page contains both:
+
+- operation/audit records;
+- the extension-owned profile log `caldav-assistant-experimental.log`.
+
+See `DIAGNOSTICS.md`.
 
 ## Testing
 
-CI covers the direct provider API, workflow state machine, WordPress connector, XPI contract, real Thunderbird + real Radicale workflow, persistent audit, Work VEVENT lifecycle, and restart of the same Thunderbird profile.
+Release acceptance requires more than syntax/unit tests. See `TESTING.md` and `NOTE.md`.

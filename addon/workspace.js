@@ -1,6 +1,8 @@
 "use strict";
 
 const $ = id => document.getElementById(id);
+let actionRunning = false;
+
 const state = {
   calendars: [],
   tasks: [],
@@ -126,6 +128,7 @@ async function persistUiFailure(action, task, error) {
 async function runWorkflow(action) {
   const task = state.current;
   if (!task) return;
+  actionRunning = true;
   $("actions").querySelectorAll("button").forEach(button => { button.disabled = true; });
 
   let receipt;
@@ -146,6 +149,7 @@ async function runWorkflow(action) {
   }
 
   await refreshAll();
+  actionRunning = false;
 
   if (receipt.success) {
     showNotice("操作已完成。");
@@ -187,8 +191,11 @@ browser.ThunderbirdCalDAV.onItemsChanged.addListener(() => {
 });
 
 if (browser.storage?.onChanged) {
-  browser.storage.onChanged.addListener((_changes, areaName) => {
-    if (areaName === "local") refreshAll();
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local" || actionRunning) return;
+    if (!changes["caldavAssistant.runtime"] && !changes["caldavAssistant.settings"]) return;
+    clearTimeout(window.__caldavAssistantStorageRefresh);
+    window.__caldavAssistantStorageRefresh = setTimeout(refreshAll, 100);
   });
 }
 

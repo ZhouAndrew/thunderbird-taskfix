@@ -99,6 +99,34 @@
     return getValue(KEY_RECEIPT, null);
   }
 
+  async function persistResult(result, scope = "system") {
+    const value = result || {};
+    try {
+      await appendAudit({
+        scope,
+        action: value.action || "unknown",
+        success: value.success !== false,
+        summary: value.summary || "",
+        details: value,
+      });
+      value.logSaved = true;
+      value.logError = null;
+    } catch (error) {
+      value.logSaved = false;
+      value.logError = String(error?.message || error || "Unknown log error");
+    }
+
+    // The UI only receives the result after the persistent log write was
+    // attempted. This key is a convenience cache, not the audit history.
+    try {
+      await saveLastReceipt(value);
+    } catch (error) {
+      value.cacheSaved = false;
+      value.cacheError = String(error?.message || error || "Unknown receipt cache error");
+    }
+    return value;
+  }
+
   globalThis.AssistantStorage = Object.freeze({
     getSettings,
     saveSettings,
@@ -110,5 +138,6 @@
     clearAudit,
     saveLastReceipt,
     getLastReceipt,
+    persistResult,
   });
 })();

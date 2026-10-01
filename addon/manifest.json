@@ -20,21 +20,38 @@
     "TaskFix": {
       "schema": "api/TaskFix/schema.json",
       "parent": {
-        "scopes": ["addon_parent"],
-        "paths": [["TaskFix"]],
+        "scopes": [
+          "addon_parent"
+        ],
+        "paths": [
+          [
+            "TaskFix"
+          ]
+        ],
         "script": "api/TaskFix/implementation.js",
-        "events": ["startup"]
+        "events": [
+          "startup"
+        ]
       }
     },
     "ThunderbirdCalDAV": {
       "schema": "api/ThunderbirdCalDAV/schema.json",
       "parent": {
-        "scopes": ["addon_parent"],
-        "paths": [["ThunderbirdCalDAV"]],
+        "scopes": [
+          "addon_parent"
+        ],
+        "paths": [
+          [
+            "ThunderbirdCalDAV"
+          ]
+        ],
         "script": "api/ThunderbirdCalDAV/implementation.js"
       }
     }
   },
-  "permissions": ["storage"],
-  "optional_permissions": ["http://*/*", "https://*/*"]
+  "permissions": [
+    "storage",
+    "http://*/*",
+    "https://*/*"
+  ]
 }

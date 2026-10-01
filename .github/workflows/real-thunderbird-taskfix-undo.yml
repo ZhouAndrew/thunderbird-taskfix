@@ -1,3 +1,4 @@
+# Release-gating convention: see TESTING.md. A stable TaskFix release must not bypass this real GUI acceptance.
 name: real-thunderbird-taskfix-undo
 
 on:

@@ -276,7 +276,6 @@ done
 echo "== Native keypress: start permissions.request from a real user event =="
 WIN="$(xdotool search --onlyvisible --pid "$TB_PID" | head -n1)"
 test -n "$WIN"
-xdotool windowactivate --sync "$WIN"
 xdotool key Return
 sleep 1
 # Approve Thunderbird's optional host-permission doorhanger.
@@ -294,7 +293,6 @@ fi
 [[ -f "$TMP/full-ready" ]] || { echo "Quick WordPress acceptance did not complete"; exit 1; }
 
 echo "== Native keypress: run real full WordPress write/read/update/media/delete =="
-xdotool windowactivate --sync "$WIN"
 xdotool key Return
 
 for _ in $(seq 1 600); do

@@ -250,12 +250,9 @@
   }
 
   function dailyLogSearchText(date = new Date()) {
-    return (
-      MONTH_NAMES[date.getMonth()] + " " +
-      date.getDate() + " " +
-      WEEKDAY_NAMES[date.getDay()] + " " +
-      date.getFullYear()
-    );
+    // A short month token lets the REST search find both "October" and "Oct"
+    // titles. The exact day/weekday/year check is done locally below.
+    return MONTH_NAMES[date.getMonth()].slice(0, 3);
   }
 
   function matchesDailyLogTitle(title, date = new Date()) {

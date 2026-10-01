@@ -37,7 +37,7 @@ with zipfile.ZipFile(path) as z:
 
     manifest = json.loads(z.read("manifest.json"))
     assert manifest["name"] == "CalDAV Assistant Experimental"
-    assert manifest["version"] == "0.3.6"
+    assert manifest["version"] == "0.3.7"
     assert manifest["browser_specific_settings"]["gecko"]["id"] == (
         "ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net"
     )
@@ -98,7 +98,9 @@ with zipfile.ZipFile(path) as z:
     assert "搜索 Task" in workspace_html
     assert "selected-uid" not in workspace_html
     assert "work-calendar" not in workspace_html
-    assert "calendar-filter" not in workspace_html
+    assert 'id="task-view"' in workspace_html
+    assert 'id="task-calendar-filter"' in workspace_html
+    assert ">未完成<" in workspace_html
     assert "VTODO" not in workspace_html
     assert 'id="selected-flow-state"' not in workspace_html
     assert ">Assistant<" not in workspace_html
@@ -110,16 +112,26 @@ with zipfile.ZipFile(path) as z:
     assert "AssistantExecutor.cancel" in workspace
     assert "结果已写入日志" in workspace
     assert "resolveWorkCalendar" in workspace
+    assert 'state.taskView = state.settings.taskView || "incomplete"' in workspace
+    assert 'view === "completed"' in workspace
+    assert 'view === "overdue"' in workspace
+    assert "打开设置" in workspace
 
     # One simple persistence function freezes log-before-display order.
     assert "persistResult" in storage
+    assert "saveSettingsWithUndo" in storage
+    assert "undoSettings" in storage
     assert 'persistResult(receipt, "workflow")' in executor
     assert 'persistResult(result, "connection")' in connection
     assert 'persistResult(result, "wordpress")' in wordpress
 
     # Connection and settings live under Tools, not on the Work page.
-    assert "Task Calendar" in tools_html
+    assert "默认 Task 视图" in tools_html
+    assert "默认 Task Calendar" in tools_html
     assert "Work Calendar" in tools_html
+    assert "undo-settings" in tools_html
+    assert "saveSettingsWithUndo" in tools
+    assert "undoSettings" in tools
     assert "Calendar 完整读写" in tools_html
     assert "WordPress 完整读写" in tools_html
     assert "No VTODO was created" in connection
@@ -148,4 +160,4 @@ with zipfile.ZipFile(path) as z:
     assert "apply.sh" not in names
     assert "patch_omnijar.py" not in names
 
-print("caldav-assistant-experimental-0.3.6-xpi-contract: PASS")
+print("caldav-assistant-experimental-0.3.7-xpi-contract: PASS")

@@ -10,11 +10,27 @@
   }
 
   function normalizeConfig(config) {
+    const requested = String(config?.transport || "auto").trim().toLowerCase();
+    const transport = ["auto", "application-password", "wp-cli"].includes(requested)
+      ? requested
+      : "auto";
     return {
+      transport,
       baseUrl: trimSlash(config?.baseUrl),
       username: String(config?.username || "").trim(),
-      applicationPassword: String(config?.applicationPassword || "").trim(),
+      applicationPassword: String(config?.applicationPassword || "").replace(/\s+/g, ""),
+      wordpressPath: String(config?.wordpressPath || "/var/www/html/wordpress").trim(),
+      wpCliExecutable: String(config?.wpCliExecutable || "wp").trim() || "wp",
     };
+  }
+
+  function selectedTransport(config) {
+    if (config.transport === "application-password" || config.transport === "wp-cli") {
+      return config.transport;
+    }
+    return config.baseUrl && config.username && config.applicationPassword
+      ? "application-password"
+      : "wp-cli";
   }
 
   async function getConfig() {
@@ -59,14 +75,12 @@
     return btoa(binary);
   }
 
-  async function request(path, options = {}) {
-    const config = await getConfig();
+  async function restRequest(config, path, options = {}) {
     if (!config.baseUrl || !config.username || !config.applicationPassword) {
-      throw new Error("WordPress connection is not configured.");
+      throw new Error("WordPress Application Password connection is not configured.");
     }
 
     permissionOrigin(config.baseUrl);
-
     const url = config.baseUrl + "/wp-json/wp/v2" + path;
     const headers = {...(options.headers || {})};
     headers.Authorization = basicAuth(config.username, config.applicationPassword);
@@ -113,9 +127,207 @@
     return data;
   }
 
+  async function wpCliRun(config, args, {blob = null, filename = ""} = {}) {
+    const bridge = browser.ThunderbirdCalDAV?.runWpCli;
+    if (typeof bridge !== "function") {
+      throw new Error("Thunderbird WP-CLI bridge is unavailable.");
+    }
+
+    let tempFileBase64 = null;
+    if (blob instanceof Blob) {
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      tempFileBase64 = bytesToBase64(bytes);
+    }
+
+    const result = await bridge({
+      executable: config.wpCliExecutable,
+      wordpressPath: config.wordpressPath,
+      args,
+      tempFileName: filename,
+      tempFileBase64,
+    });
+    if (Number(result?.exitCode ?? -1) !== 0) {
+      throw new Error(
+        "WP-CLI failed: " +
+        String(result?.stderr || result?.stdout || "unknown WP-CLI error").trim()
+      );
+    }
+    return String(result?.stdout || "").trim();
+  }
+
+  function wpCliPostView(record) {
+    const id = Number(record?.ID ?? record?.id ?? 0);
+    const title = String(record?.post_title ?? record?.title ?? "");
+    const content = String(record?.post_content ?? record?.content ?? "");
+    const status = String(record?.post_status ?? record?.status ?? "");
+    const guid = String(record?.guid ?? record?.source_url ?? "");
+    const parent = Number(record?.post_parent ?? record?.post ?? 0);
+    const mime = String(record?.post_mime_type ?? record?.mime_type ?? "");
+    return {
+      id,
+      title: {raw: title, rendered: title},
+      content: {raw: content, rendered: content},
+      status,
+      link: guid,
+      source_url: guid,
+      post: parent,
+      mime_type: mime,
+    };
+  }
+
+  async function wpCliGetPost(config, id) {
+    const stdout = await wpCliRun(config, [
+      "post", "get", String(id),
+      "--fields=ID,post_title,post_content,post_status,guid,post_parent,post_mime_type",
+      "--format=json",
+    ]);
+    return wpCliPostView(JSON.parse(stdout || "{}"));
+  }
+
+  function wpCliFieldArgs(values = {}) {
+    const map = {
+      title: "post_title",
+      content: "post_content",
+      status: "post_status",
+      type: "post_type",
+      post: "post_parent",
+    };
+    const args = [];
+    for (const [key, value] of Object.entries(values || {})) {
+      const field = map[key] || key;
+      args.push(`--${field}=${value ?? ""}`);
+    }
+    return args;
+  }
+
+  function headerValue(headers, wanted) {
+    const target = String(wanted).toLowerCase();
+    for (const [key, value] of Object.entries(headers || {})) {
+      if (String(key).toLowerCase() === target) return String(value);
+    }
+    return "";
+  }
+
+  async function wpCliRequest(config, path, options = {}) {
+    if (!config.wordpressPath) {
+      throw new Error("WordPress path is not configured for WP-CLI.");
+    }
+
+    const parsed = new URL(path, "http://wp-cli.local");
+    const route = parsed.pathname;
+    const method = String(options.method || "GET").toUpperCase();
+
+    if (route === "/users/me" && method === "GET") {
+      await wpCliRun(config, ["core", "is-installed"]);
+      let name = "WP-CLI";
+      try {
+        const blog = await wpCliRun(config, ["option", "get", "blogname"]);
+        if (blog) name += " · " + blog;
+      } catch (_error) {}
+      return {id: 0, name, slug: "wp-cli"};
+    }
+
+    if (route === "/posts" && method === "GET") {
+      const args = [
+        "post", "list",
+        "--post_type=post",
+        "--post_status=any",
+        "--fields=ID,post_title,post_status,guid",
+        "--format=json",
+      ];
+      const search = parsed.searchParams.get("search");
+      if (search) args.push("--search=" + search);
+      const stdout = await wpCliRun(config, args);
+      const rows = JSON.parse(stdout || "[]");
+      return (Array.isArray(rows) ? rows : []).map(wpCliPostView);
+    }
+
+    if (route === "/posts" && method === "POST") {
+      const values = options.json || {};
+      const stdout = await wpCliRun(config, [
+        "post", "create",
+        ...wpCliFieldArgs(values),
+        "--porcelain",
+      ]);
+      const id = Number(stdout.split(/\s+/).filter(Boolean).pop());
+      if (!id) throw new Error("WP-CLI returned no post id.");
+      return wpCliGetPost(config, id);
+    }
+
+    let match = /^\/posts\/(\d+)$/.exec(route);
+    if (match) {
+      const id = Number(match[1]);
+      if (method === "GET") return wpCliGetPost(config, id);
+      if (method === "POST") {
+        await wpCliRun(config, [
+          "post", "update", String(id),
+          ...wpCliFieldArgs(options.json || {}),
+          "--quiet",
+        ]);
+        return wpCliGetPost(config, id);
+      }
+      if (method === "DELETE") {
+        const previous = await wpCliGetPost(config, id);
+        await wpCliRun(config, ["post", "delete", String(id), "--force"]);
+        return {deleted: true, previous};
+      }
+    }
+
+    if (route === "/media" && method === "POST") {
+      const disposition = headerValue(options.headers, "Content-Disposition");
+      const filenameMatch = /filename="?([^";]+)"?/i.exec(disposition);
+      const filename = filenameMatch?.[1] || "caldav-assistant-upload.bin";
+      const stdout = await wpCliRun(
+        config,
+        ["media", "import", "__CALDAV_ASSISTANT_TEMP_FILE__", "--porcelain"],
+        {blob: options.body, filename}
+      );
+      const id = Number(stdout.split(/\s+/).filter(Boolean).pop());
+      if (!id) throw new Error("WP-CLI returned no media id.");
+      return wpCliGetPost(config, id);
+    }
+
+    match = /^\/media\/(\d+)$/.exec(route);
+    if (match) {
+      const id = Number(match[1]);
+      if (method === "GET") return wpCliGetPost(config, id);
+      if (method === "POST") {
+        const parent = Number(options.json?.post || 0);
+        await wpCliRun(config, [
+          "post", "update", String(id),
+          "--post_parent=" + parent,
+          "--quiet",
+        ]);
+        return wpCliGetPost(config, id);
+      }
+      if (method === "DELETE") {
+        const previous = await wpCliGetPost(config, id);
+        await wpCliRun(config, ["post", "delete", String(id), "--force"]);
+        return {deleted: true, previous};
+      }
+    }
+
+    throw new Error(`Unsupported WP-CLI WordPress request: ${method} ${route}`);
+  }
+
+  async function request(path, options = {}) {
+    const config = await getConfig();
+    return selectedTransport(config) === "wp-cli"
+      ? wpCliRequest(config, path, options)
+      : restRequest(config, path, options);
+  }
+
   async function ensurePermission() {
     const config = await getConfig();
-    permissionOrigin(config.baseUrl);
+    const transport = selectedTransport(config);
+    if (transport === "application-password") {
+      if (!config.baseUrl || !config.username || !config.applicationPassword) {
+        throw new Error("WordPress Application Password connection is not configured.");
+      }
+      permissionOrigin(config.baseUrl);
+    } else if (!config.wordpressPath) {
+      throw new Error("WordPress path is not configured for WP-CLI.");
+    }
     return true;
   }
 
@@ -140,7 +352,12 @@
         userName: user?.name,
       });
       result.success = true;
-      result.summary = `WordPress authenticated as ${user?.name || user?.slug || "user"}.`;
+      const config = await getConfig();
+      const transport = selectedTransport(config);
+      result.transport = transport;
+      result.summary = transport === "wp-cli"
+        ? `WordPress WP-CLI connected: ${user?.name || "WP-CLI"}.`
+        : `WordPress authenticated as ${user?.name || user?.slug || "user"}.`;
     } catch (error) {
       result.summary = `WordPress quick test failed: ${errorText(error)}`;
       result.steps.push({name: "WordPress read", success: false, error: errorText(error)});
@@ -278,12 +495,12 @@
   ];
 
   function dailyLogTitle(date = new Date()) {
-    // Keep the same human title shape as the existing wp-cli helper:
-    // "October 1  Thursday  2026".
+    // Match the long-standing WP-CLI helper title shape.
+    // Existing posts with extra spaces are still matched by matchesDailyLogTitle().
     return (
       MONTH_NAMES[date.getMonth()] + " " +
-      date.getDate() + "  " +
-      WEEKDAY_NAMES[date.getDay()] + "  " +
+      date.getDate() + " " +
+      WEEKDAY_NAMES[date.getDay()] + " " +
       date.getFullYear()
     );
   }

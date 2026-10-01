@@ -192,10 +192,18 @@ async function __runWorkspaceAcceptance() {
     "initial Calendar/VTODO render"
   );
 
-  const calendarOption = [...$("calendar-filter").options].find(
-    option => option.value === "acceptance-calendar"
+  __workspaceAssert(
+    $("actions").children.length === 0,
+    "Work actions must be hidden before a Task is selected"
   );
-  __workspaceAssert(calendarOption, "Workspace calendar filter did not render the CalDAV calendar");
+  __workspaceAssert(!document.getElementById("selected-uid"), "UID leaked into the simple Work UI");
+  __workspaceAssert(!document.getElementById("work-calendar"), "Work Calendar selector leaked into the Work UI");
+  __workspaceAssert(!document.getElementById("calendar-filter"), "Calendar filter leaked into the Work UI");
+  const navLabels = [...document.querySelectorAll(".tool-nav a")].map(node => node.textContent.trim());
+  __workspaceAssert(
+    JSON.stringify(navLabels) === JSON.stringify(["工作", "今天", "记录", "日志", "工具"]),
+    "Work UI did not keep the five simple top-level pages"
+  );
 
   let taskRow = [...$("task-list").children].find(
     row => row.querySelector?.(".item-title")?.textContent === "Seed task from Radicale"
@@ -203,13 +211,10 @@ async function __runWorkspaceAcceptance() {
   __workspaceAssert(taskRow, "Workspace task list did not render the seed VTODO");
   taskRow.click();
 
-  __workspaceAssert($("selected-uid").textContent === "seed-task", "Selected Task UID was not shown");
+  __workspaceAssert($("selected-title").textContent === "Seed task from Radicale", "Selected Task title was not shown");
   __workspaceAssert(__workspaceButton("开始"), "Start must appear after selecting an idle Task");
   __workspaceAssert(!__workspaceButton("暂停"), "Pause must not appear before Start");
   __workspaceAssert(!__workspaceButton("继续"), "Resume must not appear before Start");
-
-  $("work-calendar").value = "acceptance-calendar";
-  $("work-calendar").dispatchEvent(new Event("change"));
 
   __workspaceButton("开始").click();
   let receipt = await __workspaceWaitForReceipt("start");
@@ -224,6 +229,11 @@ async function __runWorkspaceAcceptance() {
   __workspaceAssert(
     receipt.steps.some(step => step.component === "Work Session" && step.operation === "read-back VEVENT"),
     "Start receipt does not show VEVENT read-back"
+  );
+  __workspaceAssert(receipt.logSaved === true, "Start result was displayed before persistent audit success");
+  __workspaceAssert(
+    $("receipt").textContent.includes("结果已写入日志"),
+    "Simple persistent result did not confirm that the log was written"
   );
 
   __workspaceButton("暂停").click();
@@ -262,8 +272,12 @@ async function __runWorkspaceAcceptance() {
     "Complete receipt must explicitly state whether WordPress was invoked"
   );
   __workspaceAssert(
-    $("receipt").textContent.includes("complete"),
-    "Persistent receipt is not visible on the main workspace"
+    $("receipt").textContent.includes("已完成"),
+    "Persistent human-readable result is not visible on the main workspace"
+  );
+  __workspaceAssert(
+    $("actions").children.length === 0,
+    "Completed Task must not show Start/Pause/Resume/Complete/Cancel buttons"
   );
 
   const audit = await AssistantStorage.listAudit();
@@ -279,7 +293,7 @@ async function __runWorkspaceAcceptance() {
     workflowUi: true,
     persistentReceipt: true,
     auditPersistent: true,
-    statusText: $("status").textContent,
+    simpleUi: true,
   };
 }
 
@@ -383,6 +397,7 @@ async function __runRealAcceptance() {
   __acceptanceAssert(workspaceResult.workflowUi, "Workspace workflow did not pass");
   __acceptanceAssert(workspaceResult.persistentReceipt, "Workspace persistent receipt did not pass");
   __acceptanceAssert(workspaceResult.auditPersistent, "Workspace persistent audit did not pass");
+  __acceptanceAssert(workspaceResult.simpleUi, "Workspace simple UI contract did not pass");
   await browser.tabs.remove(workspaceTab.id);
 
   __acceptanceStage = "taskfix-real-ui";
@@ -545,6 +560,7 @@ async function __runRealAcceptance() {
     workspaceOpened: true,
     workflowUi: true,
     persistentReceipt: true,
+    simpleUi: true,
     taskFixRealUi: true,
     diagnostics: true,
     createdEventId: event.id,
@@ -793,6 +809,7 @@ for key in (
     "workspaceOpened",
     "workflowUi",
     "persistentReceipt",
+    "simpleUi",
     "taskFixRealUi",
     "diagnostics",
 ):
@@ -899,6 +916,7 @@ for key in (
     "workspaceOpened",
     "workflowUi",
     "persistentReceipt",
+    "simpleUi",
     "taskFixRealUi",
     "diagnostics",
 ):

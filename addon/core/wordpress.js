@@ -230,9 +230,98 @@
     return AssistantStorage.persistResult(result, "connection");
   }
 
-  async function createLog({title, content, status = "draft", files = []}) {
+  const MONTH_NAMES = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ];
+  const WEEKDAY_NAMES = [
+    "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+  ];
+
+  function dailyLogTitle(date = new Date()) {
+    return (
+      MONTH_NAMES[date.getMonth()] + " " +
+      date.getDate() + " " +
+      WEEKDAY_NAMES[date.getDay()] + " " +
+      date.getFullYear()
+    );
+  }
+
+  function rawTitle(post) {
+    return String(post?.title?.raw || post?.title?.rendered || "").trim();
+  }
+
+  function rawContent(post) {
+    return String(post?.content?.raw || post?.content?.rendered || "");
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function logMarker() {
+    if (globalThis.crypto?.randomUUID) {
+      return "caldav-assistant-log-" + crypto.randomUUID();
+    }
+    return "caldav-assistant-log-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+  }
+
+  async function findDailyLogPost(title) {
+    const posts = await request(
+      "/posts?context=edit&per_page=100&search=" + encodeURIComponent(title)
+    );
+    return (Array.isArray(posts) ? posts : []).find(post => rawTitle(post) === title) || null;
+  }
+
+  async function ensureDailyLogPost() {
+    const title = dailyLogTitle();
+    let post = await findDailyLogPost(title);
+    if (post) return {post, title, created: false};
+
+    post = await request("/posts", {
+      method: "POST",
+      json: {
+        title,
+        content: "",
+        status: "publish",
+      },
+    });
+
+    const read = await request(`/posts/${post.id}?context=edit`);
+    if (read?.id !== post.id || rawTitle(read) !== title) {
+      throw new Error("WordPress daily log create read-back mismatch.");
+    }
+    return {post: read, title, created: true};
+  }
+
+  function buildLogAppend(content, media, marker) {
+    const blocks = [`<!-- ${marker} -->`];
+    const text = String(content || "").trim();
+    if (text) {
+      blocks.push(
+        "<!-- wp:paragraph -->\n<p>" +
+        escapeHtml(text).replace(/\\n/g, "<br>") +
+        "</p>\n<!-- /wp:paragraph -->"
+      );
+    }
+    if (media.length) {
+      const items = media.map(item =>
+        '<li><a href="' + escapeHtml(item.sourceUrl || "") + '">' +
+        escapeHtml(item.filename || "附件") +
+        "</a></li>"
+      ).join("");
+      blocks.push("<!-- wp:list -->\n<ul>" + items + "</ul>\n<!-- /wp:list -->");
+    }
+    return blocks.join("\n");
+  }
+
+  async function createLog({content, files = []}) {
     const result = {
-      action: "wordpress.create-log",
+      action: "wordpress.append-log",
       success: false,
       startedAt: new Date().toISOString(),
       steps: [],
@@ -241,60 +330,77 @@
       media: [],
     };
     try {
+      const text = String(content || "").trim();
+      if (!text && !(files || []).length) {
+        throw new Error("日志内容或附件不能为空。");
+      }
+
       const permitted = await ensurePermission();
       if (!permitted) throw new Error("WordPress host permission was not granted.");
-      const post = await request("/posts", {
-        method: "POST",
-        json: {
-          title: String(title || "").trim(),
-          content: String(content || ""),
-          status,
-        },
-      });
+
+      const daily = await ensureDailyLogPost();
+      const postId = daily.post.id;
       result.post = {
-        id: post.id,
-        title: post?.title?.rendered || title,
-        status: post.status,
-        link: post.link,
+        id: postId,
+        title: daily.title,
+        status: daily.post.status || "publish",
+        link: daily.post.link || "",
+        createdToday: daily.created,
       };
       result.steps.push({
-        name: "create WordPress post",
+        name: daily.created ? "create daily WordPress log post" : "reuse daily WordPress log post",
         success: true,
-        postId: post.id,
-        status: post.status,
-        link: post.link,
+        postId,
+        title: daily.title,
       });
 
       for (const file of files || []) {
-        const media = await uploadMedia(file, file.name || "attachment", post.id);
-        result.media.push({
-          id: media.id,
-          filename: file.name,
-          sourceUrl: media.source_url,
-          parent: post.id,
-        });
+        const uploaded = await uploadMedia(file, file.name || "attachment", postId);
+        const item = {
+          id: uploaded.id,
+          filename: file.name || "attachment",
+          sourceUrl: uploaded.source_url || "",
+          parent: postId,
+        };
+        result.media.push(item);
         result.steps.push({
           name: "upload WordPress media",
           success: true,
-          mediaId: media.id,
-          filename: file.name,
-          parentPostId: post.id,
+          mediaId: item.id,
+          filename: item.filename,
+          parentPostId: postId,
         });
       }
 
-      const read = await request(`/posts/${post.id}?context=edit`);
-      if (read?.id !== post.id) throw new Error("WordPress post read-back failed.");
-      result.steps.push({
-        name: "read-back WordPress post",
-        success: true,
-        postId: read.id,
-        status: read.status,
+      const before = await request(`/posts/${postId}?context=edit`);
+      const marker = logMarker();
+      const append = buildLogAppend(text, result.media, marker);
+      const previous = rawContent(before);
+      const next = previous
+        ? previous.replace(/\s+$/, "") + "\n\n" + append
+        : append;
+
+      await request(`/posts/${postId}`, {
+        method: "POST",
+        json: {content: next},
       });
 
+      const read = await request(`/posts/${postId}?context=edit`);
+      const verified = rawContent(read);
+      if (!verified.includes(marker)) {
+        throw new Error("WordPress log append read-back mismatch.");
+      }
+
+      result.steps.push({
+        name: "append + read-back daily WordPress log",
+        success: true,
+        postId,
+        marker,
+      });
       result.success = true;
-      result.summary = `WordPress post ${post.id} was created and verified.`;
+      result.summary = `已追加到今天的 WordPress 日志（Post ${postId}）。`;
     } catch (error) {
-      result.summary = `WordPress log failed: ${errorText(error)}`;
+      result.summary = `WordPress log append failed: ${errorText(error)}`;
       result.steps.push({name: "failure", success: false, error: errorText(error)});
     }
 

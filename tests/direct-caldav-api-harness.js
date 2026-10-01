@@ -242,6 +242,14 @@ global.ChromeUtils = {
     if (url.includes("ExtensionUtils")) {
       return {ExtensionUtils: {ExtensionError: TestExtensionError}};
     }
+    if (url.includes("Subprocess")) {
+      return {
+        Subprocess: {
+          async pathSearch(name) { return name; },
+          async call() { throw new Error("Subprocess should not run in Calendar unit harness"); },
+        },
+      };
+    }
     if (url.includes("calUtils")) {
       return {cal};
     }

@@ -83,8 +83,16 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 curl -fsS http://localhost:8080/wp-json/ >/dev/null
+docker exec caldav-tb-wp-web chown -R www-data:www-data /var/www/html
+"${WPCLI[@]}" --path=/var/www/html rewrite structure '/%postname%/' --hard >/dev/null
+"${WPCLI[@]}" --path=/var/www/html rewrite flush --hard >/dev/null
 APP_PASS="$("${WPCLI[@]}" --path=/var/www/html user application-password create wp_user "Thunderbird CI" --porcelain)"
 test -n "$APP_PASS"
+WP_AUTH="$(printf 'wp_user:%s' "$APP_PASS" | base64 -w0)"
+curl -fsS \
+  -H "Authorization: Basic $WP_AUTH" \
+  "http://localhost:8080/wp-json/wp/v2/users/me?context=edit" \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("id")==1 and d.get("slug")=="wp_user", d'
 echo "PASS: real WordPress + real Application Password prepared"
 
 echo "== Build production and instrumented XPI =="

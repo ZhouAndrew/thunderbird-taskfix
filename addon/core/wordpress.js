@@ -50,26 +50,53 @@
     return "Basic " + btoa(binary);
   }
 
+  function bytesToBase64(bytes) {
+    let binary = "";
+    const chunk = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk));
+    }
+    return btoa(binary);
+  }
+
   async function request(path, options = {}) {
     const config = await getConfig();
     if (!config.baseUrl || !config.username || !config.applicationPassword) {
       throw new Error("WordPress connection is not configured.");
     }
+
+    permissionOrigin(config.baseUrl);
+
     const url = config.baseUrl + "/wp-json/wp/v2" + path;
-    const headers = new Headers(options.headers || {});
-    headers.set("Authorization", basicAuth(config.username, config.applicationPassword));
+    const headers = {...(options.headers || {})};
+    headers.Authorization = basicAuth(config.username, config.applicationPassword);
+
+    let bodyText = null;
+    let bodyBase64 = null;
     if (options.json !== undefined) {
-      headers.set("Content-Type", "application/json");
+      headers["Content-Type"] = "application/json";
+      bodyText = JSON.stringify(options.json);
+    } else if (options.body instanceof Blob) {
+      const bytes = new Uint8Array(await options.body.arrayBuffer());
+      bodyBase64 = bytesToBase64(bytes);
+    } else if (options.body !== undefined && options.body !== null) {
+      bodyText = String(options.body);
     }
-    const response = await fetch(url, {
+
+    const bridge = browser.ThunderbirdCalDAV?.httpRequest;
+    if (typeof bridge !== "function") {
+      throw new Error("Thunderbird privileged HTTP bridge is unavailable.");
+    }
+
+    const response = await bridge({
+      url,
       method: options.method || "GET",
       headers,
-      body:
-        options.json !== undefined
-          ? JSON.stringify(options.json)
-          : options.body,
+      bodyText,
+      bodyBase64,
     });
-    const text = await response.text();
+
+    const text = String(response?.text || "");
     let data = null;
     if (text) {
       try {
@@ -78,9 +105,9 @@
         data = text;
       }
     }
-    if (!response.ok) {
+    if (!response?.ok) {
       throw new Error(
-        `WordPress HTTP ${response.status}: ${typeof data === "string" ? data : data?.message || response.statusText}`
+        `WordPress HTTP ${response?.status || 0}: ${typeof data === "string" ? data : data?.message || response?.statusText || "request failed"}`
       );
     }
     return data;
@@ -88,8 +115,8 @@
 
   async function ensurePermission() {
     const config = await getConfig();
-    const origin = permissionOrigin(config.baseUrl);
-    return browser.permissions.contains({origins: [origin]});
+    permissionOrigin(config.baseUrl);
+    return true;
   }
 
   async function quickTest() {

@@ -41,9 +41,49 @@ function render(result) {
   }
 }
 
+let wordpressBaseUrl = "";
+$("submit").disabled = true;
+
+AssistantWordPress.getConfig()
+  .then(config => {
+    wordpressBaseUrl = config.baseUrl || "";
+    $("submit").disabled = false;
+  })
+  .catch(error => {
+    render({
+      success: false,
+      summary: "WordPress 设置读取失败：" + String(error?.message || error),
+      media: [],
+    });
+  });
+
 $("submit").addEventListener("click", async () => {
   $("submit").disabled = true;
   try {
+    // Start the optional host-permission request before any await so
+    // Thunderbird still sees the user's click as the active input handler.
+    const permissionRequest = AssistantWordPress.requestPermissionForBaseUrl(
+      wordpressBaseUrl
+    );
+    const granted = await permissionRequest;
+    if (!granted) {
+      const denied = await AssistantStorage.persistResult({
+        action: "wordpress.append-log",
+        success: false,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        summary: "WordPress log append failed: WordPress host permission was not granted.",
+        steps: [{
+          name: "WordPress permission",
+          success: false,
+          error: "WordPress host permission was not granted.",
+        }],
+        media: [],
+      }, "wordpress");
+      render(denied);
+      return;
+    }
+
     const result = await AssistantWordPress.createLog({
       content: $("content").value,
       files: [...$("files").files],
@@ -53,6 +93,18 @@ $("submit").addEventListener("click", async () => {
       $("content").value = "";
       $("files").value = "";
     }
+  } catch (error) {
+    const message = String(error?.message || error || "Unknown error");
+    const failed = await AssistantStorage.persistResult({
+      action: "wordpress.append-log",
+      success: false,
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      summary: "WordPress log append failed: " + message,
+      steps: [{name: "WordPress permission", success: false, error: message}],
+      media: [],
+    }, "wordpress");
+    render(failed);
   } finally {
     $("submit").disabled = false;
   }

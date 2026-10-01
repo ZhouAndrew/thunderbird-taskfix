@@ -65,7 +65,7 @@ for _ in $(seq 1 120); do
 done
 docker exec caldav-tb-wp-web test -f /var/www/html/wp-config.php
 
-WPCLI=(docker run --rm --network caldav-tb-wp-net -v caldav-tb-wp-data:/var/www/html wordpress:cli)
+WPCLI=(docker run --rm --network caldav-tb-wp-net -v caldav-tb-wp-data:/var/www/html -e WORDPRESS_DB_HOST=caldav-tb-wp-db:3306 -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress wordpress:cli)
 "${WPCLI[@]}" --path=/var/www/html core install \
   --url=http://localhost:8080 \
   --title="Thunderbird WordPress Acceptance" \

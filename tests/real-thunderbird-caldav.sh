@@ -188,7 +188,10 @@ async function __runWorkspaceAcceptance() {
   await __workspaceWaitFor(
     () =>
       state.calendars.some(calendar => calendar.id === "acceptance-calendar") &&
-      state.tasks.some(task => task.id === "seed-task"),
+      state.tasks.some(task => task.id === "seed-task") &&
+      [...$("task-list").children].some(
+        row => row.querySelector?.(".item-title")?.textContent === "Seed task from Radicale"
+      ),
     "initial Calendar/VTODO render"
   );
 

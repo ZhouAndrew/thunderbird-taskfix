@@ -101,6 +101,8 @@
 
   async function persistResult(result, scope = "system") {
     const value = result || {};
+    value.logSaved = true;
+    value.logError = null;
     try {
       await appendAudit({
         scope,
@@ -109,8 +111,6 @@
         summary: value.summary || "",
         details: value,
       });
-      value.logSaved = true;
-      value.logError = null;
     } catch (error) {
       value.logSaved = false;
       value.logError = String(error?.message || error || "Unknown log error");

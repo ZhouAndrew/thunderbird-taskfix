@@ -21,54 +21,35 @@
 
     <div id="notice" class="notice" hidden></div>
 
-    <div class="work-layout">
-      <section class="card task-browser">
-        <div class="task-filters">
-          <select id="task-view" aria-label="Task 视图">
-            <option value="incomplete">未完成</option>
-            <option value="today">今天</option>
-            <option value="overdue">已逾期</option>
-            <option value="completed">已完成</option>
-            <option value="all">全部</option>
-          </select>
-          <select id="task-calendar-filter" aria-label="Task Calendar"></select>
-        </div>
-        <input id="task-search" type="search" placeholder="搜索 Task">
-        <div id="task-list" class="item-list"></div>
-      </section>
+    <section class="card current-work-card">
+      <div class="section-title">
+        <h2>当前工作</h2>
+        <a id="task-picker-link" class="button-link" href="task-picker.html">选择 Task</a>
+      </div>
 
-      <section class="card task-panel">
-        <div id="no-selection" class="empty-state">请选择一个 Task</div>
+      <div id="no-current" class="empty-state">
+        当前没有正在工作的 Task。
+      </div>
 
-        <div id="selection" hidden>
-          <h2 id="selected-title"></h2>
-          <div id="selected-state" class="task-state"></div>
-          <div id="selected-due" class="task-secondary"></div>
-          <div id="elapsed-block" class="elapsed-block" hidden>
-            <span>累计</span>
-            <strong id="selected-elapsed">00:00:00</strong>
-          </div>
+      <div id="current-work" hidden>
+        <h2 id="current-title"></h2>
+        <div id="current-state" class="task-state"></div>
+        <div id="current-due" class="task-secondary"></div>
 
-          <div id="actions" class="action-row"></div>
-
-          <div id="cancel-confirm" class="inline-confirm" hidden>
-            <strong>确定取消这个 Task？</strong>
-            <button id="cancel-confirm-yes" class="danger">确认取消</button>
-            <button id="cancel-confirm-no">返回</button>
-          </div>
-
-          <p id="flow-note" class="muted"></p>
+        <div class="elapsed-block">
+          <span>累计</span>
+          <strong id="current-elapsed">00:00:00</strong>
         </div>
 
-        <section class="recent-result">
-          <div class="section-title">
-            <h3>最近结果</h3>
-            <a href="logs.html">查看详细日志</a>
-          </div>
-          <div id="receipt">尚无工作结果。</div>
-        </section>
-      </section>
-    </div>
+        <div id="actions" class="action-row"></div>
+
+        <div id="cancel-confirm" class="inline-confirm" hidden>
+          <strong>确定取消这个 Task？</strong>
+          <button id="cancel-confirm-yes" class="danger">确认取消</button>
+          <button id="cancel-confirm-no">返回</button>
+        </div>
+      </div>
+    </section>
   </main>
 
   <script src="core/storage.js"></script>

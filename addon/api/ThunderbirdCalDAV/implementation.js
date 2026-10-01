@@ -352,6 +352,7 @@ async function runWpCliApi(details = {}) {
     const proc = await Subprocess.call({
       command,
       arguments: args,
+      stderr: "pipe",
     });
     proc.stdin.close();
 

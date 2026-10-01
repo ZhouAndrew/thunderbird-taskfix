@@ -8,11 +8,13 @@ TB_PID=""
 XVFB_PID=""
 REPORT_PID=""
 WM_PID=""
-RUN_TAG="${GITHUB_RUN_ID:-$}-${GITHUB_RUN_ATTEMPT:-1}"
+RUN_TAG="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 DB_NAME="caldav-tb-wp-db-${RUN_TAG}"
 WEB_NAME="caldav-tb-wp-web-${RUN_TAG}"
 NET_NAME="caldav-tb-wp-net-${RUN_TAG}"
 VOL_NAME="caldav-tb-wp-data-${RUN_TAG}"
+CADDY_NAME="caldav-tb-wp-caddy-${RUN_TAG}"
+WP_BASE_URL="https://localhost:8443"
 
 cleanup() {
   set +e
@@ -20,14 +22,15 @@ cleanup() {
   [[ -n "$XVFB_PID" ]] && kill "$XVFB_PID" 2>/dev/null || true
   [[ -n "$REPORT_PID" ]] && kill "$REPORT_PID" 2>/dev/null || true
   [[ -n "$WM_PID" ]] && kill "$WM_PID" 2>/dev/null || true
+  docker logs "$CADDY_NAME" >"$TMP/caddy.log" 2>&1 || true
   docker logs "$WEB_NAME" >"$TMP/wordpress-web.log" 2>&1 || true
   docker logs "$DB_NAME" >"$TMP/wordpress-db.log" 2>&1 || true
-  docker rm -f "$WEB_NAME" "$DB_NAME" 2>/dev/null || true
+  docker rm -f "$CADDY_NAME" "$WEB_NAME" "$DB_NAME" 2>/dev/null || true
   docker volume rm "$VOL_NAME" 2>/dev/null || true
   docker network rm "$NET_NAME" 2>/dev/null || true
   if [[ -n "${ACCEPTANCE_ARTIFACT_DIR:-}" ]]; then
     mkdir -p "$ACCEPTANCE_ARTIFACT_DIR"
-    for candidate in "$TMP/report.json" "$TMP/thunderbird.stdout" "$TMP/thunderbird.stderr" "$TMP/wordpress-web.log" "$TMP/wordpress-db.log" "$TMP/xvfb.log" "$TMP/openbox.log"; do
+    for candidate in "$TMP/report.json" "$TMP/thunderbird.stdout" "$TMP/thunderbird.stderr" "$TMP/wordpress-web.log" "$TMP/wordpress-db.log" "$TMP/caddy.log" "$TMP/xvfb.log" "$TMP/openbox.log"; do
       [[ -f "$candidate" ]] && cp "$candidate" "$ACCEPTANCE_ARTIFACT_DIR/" || true
     done
   fi

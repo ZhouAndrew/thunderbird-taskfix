@@ -26,6 +26,7 @@
         config?.wpCliCommand || config?.wpCliExecutable || "wp"
       ).trim() || "wp",
       legacyHelperDir: String(config?.legacyHelperDir || "~/bin").trim(),
+      allowUntrustedTls: Boolean(config?.allowUntrustedTls),
     };
   }
 
@@ -99,6 +100,42 @@
     return parsed.origin + "/*";
   }
 
+  function isPrivateIpv4(hostname) {
+    const parts = String(hostname || "").split(".");
+    if (parts.length !== 4 || parts.some(part => !/^\d+$/.test(part))) return false;
+    const nums = parts.map(Number);
+    if (nums.some(value => value < 0 || value > 255)) return false;
+    return (
+      nums[0] === 10 ||
+      nums[0] === 127 ||
+      (nums[0] === 169 && nums[1] === 254) ||
+      (nums[0] === 172 && nums[1] >= 16 && nums[1] <= 31) ||
+      (nums[0] === 192 && nums[1] === 168)
+    );
+  }
+
+  function assertLocalInsecureTlsUrl(baseUrl) {
+    let parsed;
+    try {
+      parsed = new URL(trimSlash(baseUrl));
+    } catch (_error) {
+      throw new Error("WordPress URL is invalid.");
+    }
+    if (parsed.protocol !== "https:") {
+      throw new Error("忽略证书校验仅适用于本地 HTTPS URL。");
+    }
+    const host = String(parsed.hostname || "").toLowerCase();
+    const local =
+      host === "localhost" ||
+      host === "::1" ||
+      host.endsWith(".local") ||
+      isPrivateIpv4(host);
+    if (!local) {
+      throw new Error("为安全起见，忽略 HTTPS 证书校验只允许 .local、localhost、回环地址或私有局域网 IP。");
+    }
+    return parsed;
+  }
+
   function basicAuth(username, password) {
     const bytes = new TextEncoder().encode(`${username}:${password}`);
     let binary = "";
@@ -137,9 +174,20 @@
       bodyText = String(options.body);
     }
 
-    const bridge = browser.ThunderbirdCalDAV?.httpRequest;
+    const useUntrustedLocalTls = Boolean(config.allowUntrustedTls);
+    if (useUntrustedLocalTls) {
+      assertLocalInsecureTlsUrl(config.baseUrl);
+    }
+
+    const bridge = useUntrustedLocalTls
+      ? browser.ThunderbirdCalDAV?.curlRequest
+      : browser.ThunderbirdCalDAV?.httpRequest;
     if (typeof bridge !== "function") {
-      throw new Error("Thunderbird privileged HTTP bridge is unavailable.");
+      throw new Error(
+        useUntrustedLocalTls
+          ? "Local insecure HTTPS REST bridge is unavailable."
+          : "Thunderbird privileged HTTP bridge is unavailable."
+      );
     }
 
     const response = await bridge({
@@ -148,6 +196,7 @@
       headers,
       bodyText,
       bodyBase64,
+      insecureTls: useUntrustedLocalTls,
     });
 
     const text = String(response?.text || "");
@@ -482,9 +531,15 @@
       const config = await getConfig();
       const transport = effectiveTransport(config);
       result.transport = transport;
+      result.tlsVerification =
+        transport === "application-password" && config.allowUntrustedTls
+          ? "disabled-local"
+          : "enabled";
       result.summary = transport === "wp-cli"
         ? `WordPress WP-CLI connected: ${user?.name || "WP-CLI"}.`
-        : `WordPress authenticated as ${user?.name || user?.slug || "user"}.`;
+        : config.allowUntrustedTls
+          ? `WordPress REST connected with certificate verification disabled for local HTTPS: ${user?.name || user?.slug || "user"}.`
+          : `WordPress authenticated as ${user?.name || user?.slug || "user"}.`;
     } catch (error) {
       result.summary = `WordPress quick test failed: ${errorText(error)}`;
       result.steps.push({name: "WordPress read", success: false, error: errorText(error)});

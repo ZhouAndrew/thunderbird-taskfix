@@ -95,6 +95,15 @@ curl -fsS \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("id")==1 and d.get("slug")=="wp_user", d'
 echo "PASS: real WordPress + real Application Password prepared"
 
+WPCLI_BRIDGE="$TMP/wp-cli-bridge"
+cat >"$WPCLI_BRIDGE" <<'SH'
+#!/usr/bin/env bash
+exec docker run --rm   --network caldav-tb-wp-net   -v caldav-tb-wp-data:/var/www/html   -e WORDPRESS_DB_HOST=caldav-tb-wp-db:3306   -e WORDPRESS_DB_USER=wordpress   -e WORDPRESS_DB_PASSWORD=wordpress   -e WORDPRESS_DB_NAME=wordpress   wordpress:cli "$@"
+SH
+chmod +x "$WPCLI_BRIDGE"
+"$WPCLI_BRIDGE" --path=/var/www/html core is-installed
+echo "PASS: host-callable WP-CLI bridge prepared"
+
 echo "== Build production and instrumented XPI =="
 chmod +x "$ROOT/packaging/build-xpi.sh"
 "$ROOT/packaging/build-xpi.sh" "$TMP/base.xpi"
@@ -102,13 +111,14 @@ python3 "$ROOT/tests/check-xpi.py" "$TMP/base.xpi"
 mkdir -p "$TMP/addon"
 (cd "$TMP/addon" && unzip -q "$TMP/base.xpi")
 
-python3 - "$TMP/addon" "$APP_PASS" <<'PY'
+python3 - "$TMP/addon" "$APP_PASS" "$WPCLI_BRIDGE" <<'PY'
 from pathlib import Path
 import json
 import sys
 
 root = Path(sys.argv[1])
 app_password = sys.argv[2]
+wp_cli_executable = sys.argv[3]
 manifest_path = root / "manifest.json"
 manifest = json.loads(manifest_path.read_text())
 permissions = manifest.setdefault("permissions", [])
@@ -199,12 +209,50 @@ async function __runRealWordPressAcceptance() {
     throw new Error("full test did not verify media read-back");
   }
 
+  const restLog = await AssistantWordPress.createLog({
+    content: "THUNDERBIRD REAL REST DAILY LOG",
+    files: [],
+  });
+  if (!restLog.success || !restLog.post?.id) {
+    throw new Error("REST daily log failed: " + (restLog.summary || JSON.stringify(restLog)));
+  }
+
+  await AssistantWordPress.saveConfig({
+    transport: "wp-cli",
+    wordpressPath: "/var/www/html",
+    wpCliExecutable: __WP_CLI_EXECUTABLE__,
+  });
+
+  const cliQuick = await AssistantWordPress.quickTest();
+  if (!cliQuick.success || cliQuick.transport !== "wp-cli") {
+    throw new Error("WP-CLI quick test failed: " + (cliQuick.summary || JSON.stringify(cliQuick)));
+  }
+
+  const cliFull = await AssistantWordPress.fullWriteTest();
+  if (!cliFull.success) {
+    throw new Error("WP-CLI full test failed: " + (cliFull.summary || JSON.stringify(cliFull)));
+  }
+
+  const cliLog = await AssistantWordPress.createLog({
+    content: "THUNDERBIRD REAL WPCLI DAILY LOG",
+    files: [],
+  });
+  if (!cliLog.success || cliLog.post?.id !== restLog.post.id) {
+    throw new Error(
+      "REST/WP-CLI daily log mismatch: " +
+      JSON.stringify({rest: restLog.post, cli: cliLog.post, summary: cliLog.summary})
+    );
+  }
+
   await __wpAcceptPost("/report", {
     ok: true,
     quick: true,
-    permissionGranted: true,
     fullWrite: true,
     cleanup: true,
+    wpCliQuick: true,
+    wpCliFull: true,
+    dualDailyLog: true,
+    dailyPostId: restLog.post.id,
   });
 }
 setTimeout(() => {
@@ -215,7 +263,8 @@ setTimeout(() => {
     });
   });
 }, 500);
-'''.replace("__WP_APP_PASSWORD__", json.dumps(app_password)) + "\n")
+'''.replace("__WP_APP_PASSWORD__", json.dumps(app_password))
+   .replace("__WP_CLI_EXECUTABLE__", json.dumps(wp_cli_executable)) + "\n")
 
 background = root / "background.js"
 background.write_text(background.read_text() + r'''
@@ -359,9 +408,9 @@ python3 - "$TMP/report.json" <<'PY'
 import json, sys
 data = json.load(open(sys.argv[1]))
 assert data.get("ok") is True, data
-for key in ("quick", "permissionGranted", "fullWrite", "cleanup"):
+for key in ("quick", "fullWrite", "cleanup", "wpCliQuick", "wpCliFull", "dualDailyLog"):
     assert data.get(key) is True, (key, data)
-print("REAL THUNDERBIRD + REAL WORDPRESS APPLICATION PASSWORD ACCEPTANCE: PASS")
+print("REAL THUNDERBIRD + REAL WORDPRESS REST + WP-CLI ACCEPTANCE: PASS")
 PY
 
 docker logs caldav-tb-wp-web >"$TMP/wordpress-web.log" 2>&1 || true

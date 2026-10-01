@@ -56,6 +56,12 @@ Inside Thunderbird's `omni.ja`, TaskFix modifies three Calendar UI source files:
 
 The patcher checks for expected source fragments and aborts on an unknown implementation instead of blindly editing a future Thunderbird build.
 
+## Real GUI acceptance convention
+
+The maintained release-gating procedure is documented in [`TESTING.md`](TESTING.md).
+
+Starting with the TaskFix 0.3.3 baseline, a stable release must pass the real official Thunderbird GUI path, including cold startup, delayed Tasks-panel opening, real task-tree multi-selection, Calendar batch transactions, Ctrl+Z / Ctrl+Shift+Z, and Edit-menu Undo/Redo. Unit/self tests alone are not sufficient.
+
 ## Required human-path acceptance test
 
 A green `selftest.sh` is **not** enough to call a release verified. On the real Thunderbird + Radicale setup, verify all of the following:

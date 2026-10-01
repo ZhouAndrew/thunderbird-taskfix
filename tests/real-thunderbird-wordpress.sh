@@ -570,10 +570,7 @@ print("REAL THUNDERBIRD + REAL WORDPRESS REST + WP-CLI ACCEPTANCE: PASS")
 PY
 
 grep -qx 'find' "$HELPER_USED"
-grep -qx 'create' "$HELPER_USED" || grep -q '^create "$CADDY_NAME" >"$TMP/caddy.log" 2>&1 || true
-docker logs "$WEB_NAME" >"$TMP/wordpress-web.log" 2>&1 || true
-docker logs "$DB_NAME" >"$TMP/wordpress-db.log" 2>&1 || true
- "$HELPER_USED"
+grep -qx 'create' "$HELPER_USED"
 echo "PASS: legacy find-today-post.sh and create-post.sh were really executed"
 
 docker logs "$CADDY_NAME" >"$TMP/caddy.log" 2>&1 || true

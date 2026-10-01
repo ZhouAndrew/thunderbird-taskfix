@@ -20,7 +20,7 @@ jobs:
       - name: Install acceptance dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xdotool openbox
+          sudo apt-get install -y xvfb xdotool openbox libnss3-tools
 
       - name: Real Thunderbird + real WordPress Application Password acceptance
         env:

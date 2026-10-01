@@ -42,11 +42,11 @@ jobs:
       - name: Build CalDAV Assistant Experimental XPI
         run: |
           chmod +x packaging/build-xpi.sh
-          packaging/build-xpi.sh /tmp/caldav-assistant-experimental-0.3.7.xpi
-          python3 tests/check-xpi.py /tmp/caldav-assistant-experimental-0.3.7.xpi
+          packaging/build-xpi.sh /tmp/caldav-assistant-experimental-0.3.8.xpi
+          python3 tests/check-xpi.py /tmp/caldav-assistant-experimental-0.3.8.xpi
       - name: Publish tested XPI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: caldav-assistant-experimental-0.3.7
-          path: /tmp/caldav-assistant-experimental-0.3.7.xpi
+          name: caldav-assistant-experimental-0.3.8
+          path: /tmp/caldav-assistant-experimental-0.3.8.xpi
           if-no-files-found: error

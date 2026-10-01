@@ -296,7 +296,7 @@ for _ in $(seq 1 300); do
 done
 [[ -f "$TMP/quick-ready" ]] || { echo "Tools did not become ready"; exit 1; }
 
-echo "== Native keypress: start permissions.request from a real user event =="
+echo "== Native click: run real WordPress quick authentication test =="
 WIN="$(xdotool search --onlyvisible --pid "$TB_PID" | tail -n1)"
 test -n "$WIN"
 echo "WordPress tools popup window: $WIN"
@@ -324,18 +324,6 @@ for _ in $(seq 1 50); do
   sleep 0.1
 done
 [[ -f "$TMP/quick-clicked" ]] || { echo "Native click did not reach wp-quick"; exit 1; }
-sleep 1
-echo "== Visible X11 windows after WordPress permission request =="
-for wid in $(xdotool search --onlyvisible --name ".*" 2>/dev/null || true); do
-  printf "%s | " "$wid"
-  xdotool getwindowname "$wid" 2>/dev/null || true
-done
-echo "== Active window =="
-ACTIVE_WIN="$(xdotool getactivewindow 2>/dev/null || true)"
-echo "$ACTIVE_WIN"
-[[ -n "$ACTIVE_WIN" ]] && xdotool getwindowname "$ACTIVE_WIN" 2>/dev/null || true
-# Try the active Thunderbird permission UI first.
-xdotool key Return
 
 for _ in $(seq 1 300); do
   [[ -f "$TMP/full-ready" ]] && break

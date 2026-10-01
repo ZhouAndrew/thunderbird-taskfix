@@ -290,10 +290,15 @@ xdotool getwindowgeometry "$WIN" || true
 # The acceptance copy fixes wp-quick at left:24px/top:24px in a popup window.
 # This is a real X mouse event, so Thunderbird's user-activation bookkeeping
 # sees the same kind of click as a person pressing the button.
-xdotool mousemove --window "$WIN" 80 42 click 1
+# tools.js explicitly focuses the quick-test button before signalling quick-ready.
+# Activate that focused button with a native keyboard event instead of guessing a
+# decorated-window mouse coordinate. This preserves Thunderbird's user-gesture
+# requirement while remaining stable across window-manager decoration sizes.
+xdotool windowactivate --sync "$WIN"
+xdotool key --window "$WIN" Return
 sleep 1
 # Approve Thunderbird's optional host-permission doorhanger.
-xdotool key Return
+xdotool key --window "$WIN" Return
 
 for _ in $(seq 1 300); do
   [[ -f "$TMP/full-ready" ]] && break

@@ -11,12 +11,13 @@ if (!global.btoa) global.btoa = value => Buffer.from(value, "binary").toString("
 if (!global.atob) global.atob = value => Buffer.from(value, "base64").toString("binary");
 
 const local = {};
+const storageWrites = [];
 let permissionGranted = false;
 global.browser = {
   storage: {
     local: {
       async get(key) { return {[key]: local[key]}; },
-      async set(values) { Object.assign(local, values); },
+      async set(values) { storageWrites.push(...Object.keys(values)); Object.assign(local, values); },
     },
   },
   permissions: {
@@ -127,7 +128,15 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
 
   const quick = await AssistantWordPress.quickTest();
   assert(quick.success, "WordPress quick test failed");
+  assert(quick.logSaved === true, "WordPress quick result was not persistently logged");
   assert(permissionGranted, "host permission was not requested");
+
+  const firstAuditWrite = storageWrites.indexOf("caldavAssistant.audit");
+  const firstReceiptWrite = storageWrites.indexOf("caldavAssistant.lastReceipt");
+  assert(
+    firstAuditWrite >= 0 && firstReceiptWrite >= 0 && firstAuditWrite < firstReceiptWrite,
+    "WordPress result cache was written before the persistent log"
+  );
 
   const full = await AssistantWordPress.fullWriteTest();
   assert(full.success, "WordPress full write test failed");

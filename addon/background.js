@@ -65,6 +65,18 @@ async function startup() {
   }
 }
 
-browser.runtime.onInstalled.addListener(() => startup().catch(console.error));
-browser.runtime.onStartup.addListener(() => startup().catch(console.error));
-startup().catch(error => console.error("[CalDAVAssistant] startup failed", error));
+let startupPromise = null;
+
+function startupOnce() {
+  if (!startupPromise) {
+    startupPromise = startup().catch(error => {
+      startupPromise = null;
+      throw error;
+    });
+  }
+  return startupPromise;
+}
+
+browser.runtime.onInstalled.addListener(() => startupOnce().catch(console.error));
+browser.runtime.onStartup.addListener(() => startupOnce().catch(console.error));
+startupOnce().catch(error => console.error("[CalDAVAssistant] startup failed", error));

@@ -196,6 +196,14 @@ async function __runWorkspaceAcceptance() {
     $("actions").children.length === 0,
     "Work actions must be hidden before a Task is selected"
   );
+  __workspaceAssert(
+    $("task-view")?.value === "incomplete",
+    "Work must default to the Incomplete task view"
+  );
+  __workspaceAssert(
+    Boolean(document.getElementById("task-calendar-filter")),
+    "Compact Thunderbird Calendar selector is missing"
+  );
   __workspaceAssert(!document.getElementById("selected-uid"), "UID leaked into the simple Work UI");
   __workspaceAssert(!document.getElementById("work-calendar"), "Work Calendar selector leaked into the Work UI");
   __workspaceAssert(!document.getElementById("calendar-filter"), "Calendar filter leaked into the Work UI");
@@ -279,6 +287,40 @@ async function __runWorkspaceAcceptance() {
     $("actions").children.length === 0,
     "Completed Task must not show Start/Pause/Resume/Complete/Cancel buttons"
   );
+  __workspaceAssert(
+    ![...$("task-list").children].some(
+      row => row.querySelector?.(".item-title")?.textContent === "Seed task from Radicale"
+    ),
+    "Completed Task remained in the default Incomplete view"
+  );
+
+  $("task-view").value = "completed";
+  $("task-view").dispatchEvent(new Event("change"));
+  taskRow = [...$("task-list").children].find(
+    row => row.querySelector?.(".item-title")?.textContent === "Seed task from Radicale"
+  );
+  __workspaceAssert(
+    taskRow,
+    "Completed Task could not be recovered through the explicit Completed view"
+  );
+
+  const settingsBeforeUndo = await AssistantStorage.getSettings();
+  await AssistantStorage.saveSettingsWithUndo({
+    taskView: "completed",
+    taskCalendarId: "acceptance-calendar",
+  });
+  const changedSettings = await AssistantStorage.getSettings();
+  __workspaceAssert(
+    changedSettings.taskView === "completed" &&
+      changedSettings.taskCalendarId === "acceptance-calendar",
+    "Default Task view/Calendar settings did not persist"
+  );
+  const restoredSettings = await AssistantStorage.undoSettings();
+  __workspaceAssert(Boolean(restoredSettings), "Settings Undo returned no previous settings");
+  __workspaceAssert(
+    JSON.stringify(await AssistantStorage.getSettings()) === JSON.stringify(settingsBeforeUndo),
+    "Settings Undo did not restore the previous defaults"
+  );
 
   const audit = await AssistantStorage.listAudit();
   const actions = audit.filter(row => row.scope === "workflow").map(row => row.action);
@@ -294,6 +336,8 @@ async function __runWorkspaceAcceptance() {
     persistentReceipt: true,
     auditPersistent: true,
     simpleUi: true,
+    defaultIncomplete: true,
+    settingsUndo: true,
   };
 }
 
@@ -398,6 +442,8 @@ async function __runRealAcceptance() {
   __acceptanceAssert(workspaceResult.persistentReceipt, "Workspace persistent receipt did not pass");
   __acceptanceAssert(workspaceResult.auditPersistent, "Workspace persistent audit did not pass");
   __acceptanceAssert(workspaceResult.simpleUi, "Workspace simple UI contract did not pass");
+  __acceptanceAssert(workspaceResult.defaultIncomplete, "Default Incomplete view did not pass");
+  __acceptanceAssert(workspaceResult.settingsUndo, "Default settings Undo did not pass");
   await browser.tabs.remove(workspaceTab.id);
 
   __acceptanceStage = "taskfix-real-ui";

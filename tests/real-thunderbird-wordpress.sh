@@ -98,7 +98,7 @@ echo "PASS: real WordPress + real Application Password prepared"
 WPCLI_BRIDGE="$TMP/wp-cli-bridge"
 cat >"$WPCLI_BRIDGE" <<'SH'
 #!/usr/bin/env bash
-exec docker run --rm   --network caldav-tb-wp-net   -v caldav-tb-wp-data:/var/www/html   -v /tmp:/tmp:ro   -e WORDPRESS_DB_HOST=caldav-tb-wp-db:3306   -e WORDPRESS_DB_USER=wordpress   -e WORDPRESS_DB_PASSWORD=wordpress   -e WORDPRESS_DB_NAME=wordpress   wordpress:cli "$@"
+exec docker run --rm   --user 0:0   --network caldav-tb-wp-net   -v caldav-tb-wp-data:/var/www/html   -v /tmp:/tmp:ro   -e WORDPRESS_DB_HOST=caldav-tb-wp-db:3306   -e WORDPRESS_DB_USER=wordpress   -e WORDPRESS_DB_PASSWORD=wordpress   -e WORDPRESS_DB_NAME=wordpress   wordpress:cli --allow-root "$@"
 SH
 chmod +x "$WPCLI_BRIDGE"
 "$WPCLI_BRIDGE" --path=/var/www/html core is-installed

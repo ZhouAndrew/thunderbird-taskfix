@@ -166,11 +166,25 @@ async function writeDiagnosticApi(component, event, details = {}) {
   return {ok: true, path};
 }
 
-function decodeBase64Bytes(value) {
-  const binary = atob(String(value || ""));
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+function decodeBase64Binary(value) {
+  const alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const clean = String(value || "").replace(/\s+/g, "").replace(/=+$/, "");
+  let output = "";
+  let bits = 0;
+  let bitCount = 0;
+
+  for (const char of clean) {
+    const index = alphabet.indexOf(char);
+    if (index < 0) throw new ExtensionError("Invalid base64 data");
+    bits = (bits << 6) | index;
+    bitCount += 6;
+    if (bitCount >= 8) {
+      bitCount -= 8;
+      output += String.fromCharCode((bits >> bitCount) & 0xff);
+    }
+  }
+  return output;
 }
 
 async function httpRequestApi(details = {}) {
@@ -203,7 +217,7 @@ async function httpRequestApi(details = {}) {
       const stream = Cc["@mozilla.org/io/string-input-stream;1"]
         .createInstance(Ci.nsIStringInputStream);
       if (details.bodyBase64) {
-        const binary = atob(String(details.bodyBase64));
+        const binary = decodeBase64Binary(details.bodyBase64);
         stream.setData(binary, binary.length);
       } else {
         stream.setUTF8Data(String(details.bodyText));
@@ -283,7 +297,7 @@ function tempFileFromBase64(filename, base64) {
   file.append(safe);
   file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o600);
 
-  const binary = atob(String(base64 || ""));
+  const binary = decodeBase64Binary(base64);
   const stream = Cc["@mozilla.org/network/file-output-stream;1"]
     .createInstance(Ci.nsIFileOutputStream);
   stream.init(file, 0x02 | 0x08 | 0x20, 0o600, 0);

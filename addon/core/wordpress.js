@@ -28,6 +28,27 @@
     return normalized;
   }
 
+  function permissionOrigin(baseUrl) {
+    const normalized = trimSlash(baseUrl);
+    if (!normalized) throw new Error("WordPress URL is not configured.");
+    let parsed;
+    try {
+      parsed = new URL(normalized);
+    } catch (_error) {
+      throw new Error("WordPress URL is invalid.");
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error("WordPress URL must use http:// or https://.");
+    }
+    return parsed.origin + "/*";
+  }
+
+  function requestPermissionForBaseUrl(baseUrl) {
+    // IMPORTANT: callers must invoke this directly from a user-input handler,
+    // before their first await. Thunderbird rejects delayed permissions.request().
+    return browser.permissions.request({origins: [permissionOrigin(baseUrl)]});
+  }
+
   function basicAuth(username, password) {
     const bytes = new TextEncoder().encode(`${username}:${password}`);
     let binary = "";
@@ -73,11 +94,8 @@
 
   async function ensurePermission() {
     const config = await getConfig();
-    if (!config.baseUrl) throw new Error("WordPress URL is not configured.");
-    const origin = new URL(config.baseUrl).origin + "/*";
-    const has = await browser.permissions.contains({origins: [origin]});
-    if (has) return true;
-    return browser.permissions.request({origins: [origin]});
+    const origin = permissionOrigin(config.baseUrl);
+    return browser.permissions.contains({origins: [origin]});
   }
 
   async function quickTest() {
@@ -476,6 +494,7 @@
   globalThis.AssistantWordPress = Object.freeze({
     getConfig,
     saveConfig,
+    requestPermissionForBaseUrl,
     ensurePermission,
     quickTest,
     fullWriteTest,

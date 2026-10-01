@@ -314,17 +314,7 @@
         ? `${receipt.action} completed and verified.`
         : `${receipt.action} did not complete: ${receipt.error || "see steps"}`;
     }
-    await AssistantStorage.saveLastReceipt(receipt);
-    await AssistantStorage.appendAudit({
-      scope: "workflow",
-      action: receipt.action,
-      success: receipt.success,
-      summary: receipt.success
-        ? `${receipt.action} completed for ${receipt.task?.title || "task"}`
-        : `${receipt.action} failed for ${receipt.task?.title || "task"}`,
-      details: receipt,
-    });
-    return receipt;
+    return AssistantStorage.persistResult(receipt, "workflow");
   }
 
   async function runAction(action, task, runner) {

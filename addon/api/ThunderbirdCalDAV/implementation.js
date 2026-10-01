@@ -303,7 +303,7 @@ async function runWpCliApi(details = {}) {
   appendDiagnosticLog("wp-cli", "run.start", {
     executable: command,
     wordpressPath,
-    args,
+    operation: args.slice(0, 3),
   });
 
   try {
@@ -323,7 +323,7 @@ async function runWpCliApi(details = {}) {
     appendDiagnosticLog("wp-cli", "run.success", {
       executable: command,
       wordpressPath,
-      args,
+      operation: args.slice(0, 3),
       exitCode,
       durationMs: Date.now() - started,
     });
@@ -333,7 +333,7 @@ async function runWpCliApi(details = {}) {
     appendDiagnosticLog("wp-cli", "run.error", {
       executable: command,
       wordpressPath,
-      args,
+      operation: args.slice(0, 3),
       durationMs: Date.now() - started,
       error,
     });

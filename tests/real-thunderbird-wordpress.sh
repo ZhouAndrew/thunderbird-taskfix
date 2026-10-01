@@ -7,18 +7,20 @@ TMP="$(mktemp -d)"
 TB_PID=""
 XVFB_PID=""
 REPORT_PID=""
+WM_PID=""
 
 cleanup() {
   set +e
   [[ -n "$TB_PID" ]] && kill "$TB_PID" 2>/dev/null || true
   [[ -n "$XVFB_PID" ]] && kill "$XVFB_PID" 2>/dev/null || true
   [[ -n "$REPORT_PID" ]] && kill "$REPORT_PID" 2>/dev/null || true
+  [[ -n "$WM_PID" ]] && kill "$WM_PID" 2>/dev/null || true
   docker rm -f caldav-tb-wp-web caldav-tb-wp-db 2>/dev/null || true
   docker volume rm caldav-tb-wp-data 2>/dev/null || true
   docker network rm caldav-tb-wp-net 2>/dev/null || true
   if [[ -n "${ACCEPTANCE_ARTIFACT_DIR:-}" ]]; then
     mkdir -p "$ACCEPTANCE_ARTIFACT_DIR"
-    for candidate in "$TMP/report.json" "$TMP/thunderbird.stdout" "$TMP/thunderbird.stderr" "$TMP/wordpress-web.log" "$TMP/wordpress-db.log" "$TMP/xvfb.log"; do
+    for candidate in "$TMP/report.json" "$TMP/thunderbird.stdout" "$TMP/thunderbird.stderr" "$TMP/wordpress-web.log" "$TMP/wordpress-db.log" "$TMP/xvfb.log" "$TMP/openbox.log"; do
       [[ -f "$candidate" ]] && cp "$candidate" "$ACCEPTANCE_ARTIFACT_DIR/" || true
     done
   fi
@@ -250,6 +252,10 @@ Xvfb :99 -screen 0 1280x1024x24 >"$TMP/xvfb.log" 2>&1 &
 XVFB_PID=$!
 export DISPLAY=:99
 sleep 0.5
+openbox --sm-disable >"$TMP/openbox.log" 2>&1 &
+WM_PID=$!
+sleep 0.5
+kill -0 "$WM_PID"
 "$TMP/thunderbird/thunderbird" -no-remote -profile "$PROFILE" >"$TMP/thunderbird.stdout" 2>"$TMP/thunderbird.stderr" &
 TB_PID=$!
 

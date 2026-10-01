@@ -243,7 +243,7 @@ async function __runTaskPickerAcceptance() {
   await __pickerWaitFor(
     () =>
       state.runtime?.state === "idle" &&
-      state.selected?.id === "switch-target" &&
+      state.selected?.id === targetId &&
       Boolean(__pickerButton("开始这个 Task")),
     "put-aside -> preserved target selection"
   );

@@ -180,8 +180,15 @@ async function __runTaskPickerAcceptance() {
   const mode = new URLSearchParams(location.search).get("acceptance");
   if (!mode) return;
 
-  const targetId = mode === "switch" ? "switch-target" : "seed-task";
-  const targetTitle = mode === "switch" ? "Switch target task" : "Seed task from Radicale";
+  let targetId = "seed-task";
+  let targetTitle = "Seed task from Radicale";
+  if (mode === "switch") {
+    const saved = await browser.storage.local.get("caldavAssistant.acceptanceSwitchTarget");
+    const target = saved["caldavAssistant.acceptanceSwitchTarget"];
+    __pickerAssert(target?.id, "Switch target reference was not persisted by acceptance setup");
+    targetId = target.id;
+    targetTitle = target.title || "Switch target task";
+  }
 
   await __pickerWaitFor(
     () =>
@@ -722,16 +729,26 @@ async function __runRealAcceptance() {
   await browser.tabs.remove(workspaceTab.id);
 
   __acceptanceStage = "create-switch-target";
-  try {
-    await browser.ThunderbirdCalDAV.deleteTask(calendar.id, "switch-target");
-  } catch (_missingSwitchTarget) {}
-  await browser.ThunderbirdCalDAV.createTask(calendar.id, {
-    id: "switch-target",
+  const switchTarget = await browser.ThunderbirdCalDAV.createTask(calendar.id, {
     title: "Switch target task",
     status: "NEEDS-ACTION",
     percentComplete: 0,
     categories: ["Acceptance"],
   });
+  __acceptanceAssert(switchTarget?.id, "Created switch target has no provider UID");
+  await browser.storage.local.set({
+    "caldavAssistant.acceptanceSwitchTarget": {
+      id: switchTarget.id,
+      calendarId: switchTarget.calendarId || calendar.id,
+      title: switchTarget.title || "Switch target task",
+    },
+  });
+  for (let attempt = 0; attempt < 120; attempt++) {
+    const available = await browser.ThunderbirdCalDAV.listTasks(calendar.id);
+    if (available.some(task => task.id === switchTarget.id)) break;
+    if (attempt === 119) throw new Error("Created switch target did not become visible through listTasks");
+    await __acceptanceDelay(100);
+  }
 
   __acceptanceStage = "task-picker-switch";
   const pickerSwitchTab = await browser.tabs.create({
@@ -758,8 +775,8 @@ async function __runRealAcceptance() {
   for (let attempt = 0; attempt < 160; attempt++) {
     const runtimeState = await browser.storage.local.get("caldavAssistant.runtime");
     const runtime = runtimeState["caldavAssistant.runtime"];
-    if (runtime?.state === "working" && runtime?.currentTask?.id === "switch-target") break;
-    if (attempt === 159) throw new Error("Explicit Start did not make switch-target current");
+    if (runtime?.state === "working" && runtime?.currentTask?.id === switchTarget.id) break;
+    if (attempt === 159) throw new Error("Explicit Start did not make the selected switch target current");
     await __acceptanceDelay(100);
   }
   await browser.tabs.remove(pickerSwitchTab.id);
@@ -850,7 +867,7 @@ async function __runRealAcceptance() {
   __acceptanceAssert(workflowTask.status === "IN-PROCESS", "Put-aside changed seed Task status unexpectedly");
   __acceptanceAssert(workflowTask.paused === true, "Put-aside did not preserve paused marker on seed Task");
 
-  const switchedTask = await browser.ThunderbirdCalDAV.getTask(calendar.id, "switch-target");
+  const switchedTask = await browser.ThunderbirdCalDAV.getTask(calendar.id, switchTarget.id);
   __acceptanceAssert(switchedTask.status === "COMPLETED", "Switched Task Complete was not persisted to CalDAV");
   __acceptanceAssert(switchedTask.paused === false, "Completed switched Task retained paused marker");
 
@@ -859,7 +876,7 @@ async function __runRealAcceptance() {
     item => item.workSession && item.taskUid === "seed-task"
   );
   const switchWorkEvents = (await browser.ThunderbirdCalDAV.listEvents(calendar.id, "", "")).filter(
-    item => item.workSession && item.taskUid === "switch-target"
+    item => item.workSession && item.taskUid === switchTarget.id
   );
   __acceptanceAssert(seedWorkEvents.length >= 2, "Start/Resume did not create separate seed Work VEVENTs");
   __acceptanceAssert(
@@ -946,7 +963,8 @@ async function __runRealAcceptance() {
   for (const workEvent of workEvents) {
     await browser.ThunderbirdCalDAV.deleteEvent(calendar.id, workEvent.id);
   }
-  await browser.ThunderbirdCalDAV.deleteTask(calendar.id, "switch-target");
+  await browser.ThunderbirdCalDAV.deleteTask(calendar.id, switchTarget.id);
+  await browser.storage.local.set({"caldavAssistant.acceptanceSwitchTarget": null});
   await browser.ThunderbirdCalDAV.updateTask(calendar.id, "seed-task", {
     status: "NEEDS-ACTION",
     paused: false,

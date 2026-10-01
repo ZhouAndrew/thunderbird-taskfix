@@ -149,6 +149,9 @@ async function __runRealWordPressAcceptance() {
   quick.style.top = "24px";
   quick.style.zIndex = "999999";
   quick.focus();
+  quick.addEventListener("click", () => {
+    void __wpAcceptPost("/quick-clicked");
+  }, {once: true});
   await __wpAcceptPost("/quick-ready");
 
   const quickResult = await __wpAcceptWaitReceipt("connection.wordpress-quick");
@@ -290,15 +293,20 @@ xdotool getwindowgeometry "$WIN" || true
 # The acceptance copy fixes wp-quick at left:24px/top:24px in a popup window.
 # This is a real X mouse event, so Thunderbird's user-activation bookkeeping
 # sees the same kind of click as a person pressing the button.
-# tools.js explicitly focuses the quick-test button before signalling quick-ready.
-# Activate that focused button with a native keyboard event instead of guessing a
-# decorated-window mouse coordinate. This preserves Thunderbird's user-gesture
-# requirement while remaining stable across window-manager decoration sizes.
+# Openbox adds a title bar above the WebExtension content. The acceptance
+# button is fixed at content left/top 24px, so click well inside it after accounting
+# for decorations. Require the DOM click marker before proceeding: this proves the
+# permission request is entered from a real native user event rather than a JS call.
 xdotool windowactivate --sync "$WIN"
-xdotool key --window "$WIN" Return
+xdotool mousemove --window "$WIN" 90 75 click 1
+for _ in $(seq 1 50); do
+  [[ -f "$TMP/quick-clicked" ]] && break
+  sleep 0.1
+done
+[[ -f "$TMP/quick-clicked" ]] || { echo "Native click did not reach wp-quick"; exit 1; }
 sleep 1
 # Approve Thunderbird's optional host-permission doorhanger.
-xdotool key --window "$WIN" Return
+xdotool key Return
 
 for _ in $(seq 1 300); do
   [[ -f "$TMP/full-ready" ]] && break

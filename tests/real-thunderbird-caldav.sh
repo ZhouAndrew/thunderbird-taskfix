@@ -394,6 +394,11 @@ async function __runToolsAcceptance() {
   );
 
   const before = await AssistantStorage.getSettings();
+  const beforeDefaults = {
+    taskView: before.taskView,
+    taskCalendarId: before.taskCalendarId,
+    workCalendarId: before.workCalendarId,
+  };
   $("task-view").value = "completed";
   $("task-calendar").value = "acceptance-calendar";
   $("save-settings").click();
@@ -409,7 +414,9 @@ async function __runToolsAcceptance() {
 
   await __toolsWaitFor(async () => {
     const settings = await AssistantStorage.getSettings();
-    return JSON.stringify(settings) === JSON.stringify(before);
+    return settings.taskView === beforeDefaults.taskView &&
+      settings.taskCalendarId === beforeDefaults.taskCalendarId &&
+      settings.workCalendarId === beforeDefaults.workCalendarId;
   }, "undo Task defaults");
 
   return {

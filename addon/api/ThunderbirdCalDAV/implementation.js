@@ -6,6 +6,9 @@ var {
 var {
   ExtensionUtils: { ExtensionError },
 } = ChromeUtils.importESModule("resource://gre/modules/ExtensionUtils.sys.mjs");
+var { Services } = ChromeUtils.importESModule(
+  "resource://gre/modules/Services.sys.mjs"
+);
 var { cal } = ChromeUtils.importESModule(
   "resource:///modules/calendar/calUtils.sys.mjs"
 );
@@ -158,6 +161,83 @@ async function clearDiagnosticsApi() {
 async function writeDiagnosticApi(component, event, details = {}) {
   const path = appendDiagnosticLog(component, event, details || {});
   return {ok: true, path};
+}
+
+function decodeBase64Bytes(value) {
+  const binary = atob(String(value || ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function httpRequestApi(details = {}) {
+  const url = String(details.url || "").trim();
+  if (!/^https?:\/\//i.test(url)) {
+    throw new ExtensionError("HTTP request URL must use http:// or https://");
+  }
+
+  const method = String(details.method || "GET").toUpperCase();
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(details.headers || {})) {
+    headers.set(String(name), String(value));
+  }
+
+  let body;
+  if (details.bodyBase64) {
+    body = decodeBase64Bytes(details.bodyBase64);
+  } else if (details.bodyText !== undefined && details.bodyText !== null) {
+    body = String(details.bodyText);
+  }
+
+  const started = Date.now();
+  appendDiagnosticLog("http", "request.start", {
+    url,
+    method,
+    headers: Object.fromEntries(headers),
+    bodyBytes: details.bodyBase64 ? String(details.bodyBase64).length : (details.bodyText ? String(details.bodyText).length : 0),
+  });
+
+  try {
+    const systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
+    const request = new Request(url, {
+      method,
+      headers,
+      body: method === "GET" || method === "HEAD" ? undefined : body,
+      credentials: "omit",
+      redirect: "follow",
+      cache: "no-store",
+      referrerPolicy: "no-referrer",
+      mode: "no-cors",
+      triggeringPrincipal: systemPrincipal,
+      neverTaint: true,
+    });
+    const response = await fetch(request);
+    const text = await response.text();
+    const result = {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      url: response.url || url,
+      text,
+    };
+    appendDiagnosticLog("http", "request.success", {
+      url,
+      method,
+      status: response.status,
+      durationMs: Date.now() - started,
+    });
+    return result;
+  } catch (error) {
+    appendDiagnosticLog("http", "request.error", {
+      url,
+      method,
+      durationMs: Date.now() - started,
+      error,
+    });
+    throw new ExtensionError(
+      "Privileged HTTP request failed: " + String(error?.message || error)
+    );
+  }
 }
 
 async function loggedMutation(action, details, callback) {
@@ -754,6 +834,7 @@ this.ThunderbirdCalDAV = class extends ExtensionAPI {
         readDiagnostics: readDiagnosticsApi,
         clearDiagnostics: clearDiagnosticsApi,
         writeDiagnostic: writeDiagnosticApi,
+        httpRequest: httpRequestApi,
 
         onItemsChanged: new EventManager({
           context,

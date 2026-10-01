@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "CalDAV Assistant Experimental",
   "description": "Simple state-driven CalDAV task workflow with verified Work sessions, persistent logs, connection tests and WordPress logging.",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "author": "ZhouAndrew",
   "background": {
     "scripts": [
@@ -20,21 +20,36 @@
     "TaskFix": {
       "schema": "api/TaskFix/schema.json",
       "parent": {
-        "scopes": ["addon_parent"],
-        "paths": [["TaskFix"]],
+        "scopes": [
+          "addon_parent"
+        ],
+        "paths": [
+          [
+            "TaskFix"
+          ]
+        ],
         "script": "api/TaskFix/implementation.js",
-        "events": ["startup"]
+        "events": [
+          "startup"
+        ]
       }
     },
     "ThunderbirdCalDAV": {
       "schema": "api/ThunderbirdCalDAV/schema.json",
       "parent": {
-        "scopes": ["addon_parent"],
-        "paths": [["ThunderbirdCalDAV"]],
+        "scopes": [
+          "addon_parent"
+        ],
+        "paths": [
+          [
+            "ThunderbirdCalDAV"
+          ]
+        ],
         "script": "api/ThunderbirdCalDAV/implementation.js"
       }
     }
   },
-  "permissions": ["storage"],
-  "optional_permissions": ["http://*/*", "https://*/*"]
+  "permissions": [
+    "storage"
+  ]
 }

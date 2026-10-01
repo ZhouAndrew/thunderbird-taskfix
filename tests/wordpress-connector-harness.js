@@ -12,7 +12,7 @@ if (!global.atob) global.atob = value => Buffer.from(value, "base64").toString("
 
 const local = {};
 const storageWrites = [];
-let permissionGranted = false;
+let lastWpCliCall = null;
 global.browser = {
   storage: {
     local: {
@@ -21,8 +21,39 @@ global.browser = {
     },
   },
   permissions: {
-    async contains() { return permissionGranted; },
-    async request() { permissionGranted = true; return true; },
+    async contains() { return true; },
+  },
+  ThunderbirdCalDAV: {
+    async httpRequest(details = {}) {
+      const headers = new Headers(details.headers || {});
+      let body = details.bodyText ?? undefined;
+      if (details.bodyBase64) {
+        body = Uint8Array.from(Buffer.from(details.bodyBase64, "base64"));
+      }
+      const response = await global.fetch(details.url, {
+        method: details.method || "GET",
+        headers,
+        body,
+      });
+      return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        url: response.url || details.url,
+        text: await response.text(),
+      };
+    },
+    async runWpCli(details = {}) {
+      lastWpCliCall = details;
+      const args = details.args || [];
+      if (args[0] === "core" && args[1] === "is-installed") {
+        return {exitCode: 0, stdout: "", stderr: ""};
+      }
+      if (args[0] === "option" && args[1] === "get" && args[2] === "blogname") {
+        return {exitCode: 0, stdout: "Acceptance WP\n", stderr: ""};
+      }
+      return {exitCode: 1, stdout: "", stderr: "unexpected mocked wp command: " + args.join(" ")};
+    },
   },
 };
 
@@ -49,6 +80,15 @@ global.fetch = async (url, options = {}) => {
     return jsonResponse({id: 7, name: "Acceptance User", slug: "acceptance"});
   }
 
+  if (path === "/posts" && method === "GET") {
+    const search = parsed.searchParams.get("search") || "";
+    return jsonResponse(
+      [...posts.values()].filter(post =>
+        !search || String(post.title?.raw || post.title?.rendered || "").includes(search)
+      )
+    );
+  }
+
   if (path === "/posts" && method === "POST") {
     const body = JSON.parse(options.body);
     const id = ++nextPost;
@@ -56,7 +96,7 @@ global.fetch = async (url, options = {}) => {
       id,
       status: body.status || "draft",
       link: `http://example.test/?p=${id}`,
-      title: {rendered: body.title || ""},
+      title: {raw: body.title || "", rendered: body.title || ""},
       content: {raw: body.content || "", rendered: body.content || ""},
     };
     posts.set(id, post);
@@ -72,7 +112,7 @@ global.fetch = async (url, options = {}) => {
     if (method === "POST") {
       const body = JSON.parse(options.body);
       if ("content" in body) post.content = {raw: body.content, rendered: body.content};
-      if ("title" in body) post.title = {rendered: body.title};
+      if ("title" in body) post.title = {raw: body.title, rendered: body.title};
       if ("status" in body) post.status = body.status;
       return jsonResponse(post);
     }
@@ -126,10 +166,44 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
     applicationPassword: "secret-app-password",
   });
 
+  await AssistantStorage.saveSettingsWithUndo({taskView: "completed"});
+  assert(
+    !JSON.stringify(local["caldavAssistant.settingsUndo"]).includes("secret-app-password"),
+    "settings undo duplicated the WordPress application password"
+  );
+  await AssistantStorage.undoSettings();
+  assert(
+    (await AssistantStorage.getSettings()).wordpress?.applicationPassword === "secret-app-password",
+    "targeted settings undo damaged unrelated WordPress configuration"
+  );
+
   const quick = await AssistantWordPress.quickTest();
-  assert(quick.success, "WordPress quick test failed");
+  assert(quick.success, "WordPress REST quick test failed");
+  assert(quick.transport === "application-password", "auto transport did not select Application Password");
   assert(quick.logSaved === true, "WordPress quick result was not persistently logged");
-  assert(permissionGranted, "host permission was not requested");
+
+  await AssistantWordPress.saveConfig({
+    transport: "wp-cli",
+    wordpressPath: "/var/www/html/wordpress",
+    wpCliCommand: "sudo -n -u www-data /usr/local/bin/wp",
+  });
+  const cliQuick = await AssistantWordPress.quickTest();
+  assert(cliQuick.success, "WordPress WP-CLI quick test failed");
+  assert(cliQuick.transport === "wp-cli", "explicit WP-CLI transport was not selected");
+  assert(lastWpCliCall?.executable === "sudo", "legacy sudo WP-CLI executable was not preserved");
+  assert(
+    JSON.stringify(lastWpCliCall?.prefixArgs) === JSON.stringify(["-n", "-u", "www-data", "/usr/local/bin/wp"]),
+    "legacy sudo WP-CLI prefix arguments were not preserved"
+  );
+
+  await AssistantWordPress.saveConfig({
+    transport: "application-password",
+    baseUrl: "http://example.test/wordpress/",
+    username: "acceptance",
+    applicationPassword: "secret-app-password",
+    wordpressPath: "/var/www/html/wordpress",
+    wpCliCommand: "wp",
+  });
 
   const firstAuditWrite = storageWrites.indexOf("caldavAssistant.audit");
   const firstReceiptWrite = storageWrites.indexOf("caldavAssistant.lastReceipt");
@@ -153,16 +227,54 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
 
   const file = new Blob(["attachment"], {type: "text/plain"});
   Object.defineProperty(file, "name", {value: "note.txt"});
-  const log = await AssistantWordPress.createLog({
-    title: "Production log",
+  const image = new Blob(["png"], {type: "image/png"});
+  Object.defineProperty(image, "name", {value: "photo.png"});
+  const firstLog = await AssistantWordPress.createLog({
     content: "Completed work.",
-    status: "draft",
-    files: [file],
+    files: [file, image],
   });
-  assert(log.success, "WordPress log create failed");
-  assert(log.post?.id, "WordPress log receipt has no Post ID");
-  assert(log.media?.[0]?.id, "WordPress log receipt has no Media ID");
-  assert(log.media[0].parent === log.post.id, "media parent Post ID was not reported");
+  assert(firstLog.success, "WordPress first log append failed");
+  assert(firstLog.post?.id, "WordPress log receipt has no Post ID");
+  assert(firstLog.post.createdToday === true, "first log did not create today's daily post");
+  assert(firstLog.media?.[0]?.id, "WordPress log receipt has no Media ID");
+  assert(firstLog.media?.[1]?.id, "WordPress image receipt has no Media ID");
+  assert(firstLog.media.every(item => item.parent === firstLog.post.id), "media parent Post ID was not reported");
+
+  const dailyPostId = firstLog.post.id;
+
+  // The older wp-cli finder accepts month abbreviation, arbitrary spacing,
+  // and title token order. Keep the add-on compatible with those existing
+  // daily posts instead of creating a duplicate.
+  const createdTitleParts = String(firstLog.post.title || "").trim().split(/\s+/);
+  assert(createdTitleParts.length === 4, "unexpected generated daily title");
+  const [monthName, dayNumber, weekdayName, yearNumber] = createdTitleParts;
+  posts.get(dailyPostId).title = {
+    raw: weekdayName + " " + monthName.slice(0, 3) + " " + dayNumber + " " + yearNumber,
+    rendered: weekdayName + " " + monthName.slice(0, 3) + " " + dayNumber + " " + yearNumber,
+  };
+
+  const secondLog = await AssistantWordPress.createLog({
+    content: "Second work entry.",
+    files: [],
+  });
+  assert(secondLog.success, "WordPress second log append failed");
+  assert(secondLog.post?.id === dailyPostId, "second log created a different WordPress post");
+  assert(secondLog.post.createdToday === false, "second log did not reuse today's daily post");
+  assert(posts.size === 1, "one-by-one logging created more than one daily WordPress post");
+  const dailyPost = posts.get(dailyPostId);
+  const dailyContent = dailyPost?.content?.raw || "";
+  const title = firstLog.post.title || "";
+  assert(
+    /^[A-Za-z]+ \d{1,2} [A-Za-z]+ \d{4}$/.test(title),
+    "new daily WordPress post title no longer matches the existing helper format"
+  );
+  assert(dailyContent.includes("Completed work."), "first log entry was lost");
+  assert(dailyContent.includes("Second work entry."), "second log entry was not appended");
+  assert(/<p>\d{2}:\d{2} Completed work\.<\/p>/.test(dailyContent), "log entry has no HH:MM prefix");
+  assert(dailyContent.includes("<!-- wp:file"), "generic attachment is not a Gutenberg file block");
+  assert(dailyContent.includes("note.txt"), "attachment link was not appended to the daily log");
+  assert(dailyContent.includes("<!-- wp:image"), "image attachment is not a Gutenberg image block");
+  assert(dailyContent.includes("photo.png"), "image attachment alt text was not preserved");
 
   const audits = await AssistantStorage.listAudit();
   assert(audits.some(row => row.scope === "wordpress"), "WordPress log was not audited");

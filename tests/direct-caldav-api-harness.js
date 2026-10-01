@@ -242,6 +242,21 @@ global.ChromeUtils = {
     if (url.includes("ExtensionUtils")) {
       return {ExtensionUtils: {ExtensionError: TestExtensionError}};
     }
+    if (url.includes("NetUtil")) {
+      return {NetUtil: {
+        newChannel() { throw new Error("NetUtil should not run in Calendar unit harness"); },
+        asyncFetch() { throw new Error("NetUtil should not run in Calendar unit harness"); },
+        readInputStreamToString() { return ""; },
+      }};
+    }
+    if (url.includes("Subprocess")) {
+      return {
+        Subprocess: {
+          async pathSearch(name) { return name; },
+          async call() { throw new Error("Subprocess should not run in Calendar unit harness"); },
+        },
+      };
+    }
     if (url.includes("calUtils")) {
       return {cal};
     }

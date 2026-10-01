@@ -2,6 +2,7 @@
 
 (() => {
   const KEY_SETTINGS = "caldavAssistant.settings";
+  const KEY_SETTINGS_UNDO = "caldavAssistant.settingsUndo";
   const KEY_RUNTIME = "caldavAssistant.runtime";
   const KEY_AUDIT = "caldavAssistant.audit";
   const KEY_RECEIPT = "caldavAssistant.lastReceipt";
@@ -36,6 +37,58 @@
     const current = await getSettings();
     const next = {...current, ...(patch || {})};
     return setValue(KEY_SETTINGS, next);
+  }
+
+  async function saveSettingsWithUndo(patch) {
+    const current = await getSettings();
+    const changes = patch || {};
+    const keys = Object.keys(changes);
+    const previous = {};
+    const existed = {};
+
+    for (const key of keys) {
+      existed[key] = Object.prototype.hasOwnProperty.call(current, key);
+      if (existed[key]) previous[key] = current[key];
+    }
+
+    const next = {...current, ...changes};
+    await setValue(KEY_SETTINGS_UNDO, {
+      keys,
+      previous,
+      existed,
+      timestamp: nowIso(),
+    });
+    await setValue(KEY_SETTINGS, next);
+    return {keys, next};
+  }
+
+  async function getSettingsUndo() {
+    return getValue(KEY_SETTINGS_UNDO, null);
+  }
+
+  async function undoSettings() {
+    const snapshot = await getSettingsUndo();
+    if (!snapshot) return null;
+
+    // Compatibility with the short-lived early 0.3.7 development snapshot.
+    if (!Array.isArray(snapshot.keys) && snapshot.previous) {
+      await setValue(KEY_SETTINGS, snapshot.previous);
+      await setValue(KEY_SETTINGS_UNDO, null);
+      return snapshot.previous;
+    }
+
+    const current = await getSettings();
+    const restored = {...current};
+    for (const key of snapshot.keys || []) {
+      if (snapshot.existed?.[key]) {
+        restored[key] = snapshot.previous?.[key];
+      } else {
+        delete restored[key];
+      }
+    }
+    await setValue(KEY_SETTINGS, restored);
+    await setValue(KEY_SETTINGS_UNDO, null);
+    return restored;
   }
 
   async function getRuntime() {
@@ -130,6 +183,9 @@
   globalThis.AssistantStorage = Object.freeze({
     getSettings,
     saveSettings,
+    saveSettingsWithUndo,
+    getSettingsUndo,
+    undoSettings,
     getRuntime,
     setRuntime,
     clearRuntime,

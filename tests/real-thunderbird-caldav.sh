@@ -188,13 +188,24 @@ async function __runWorkspaceAcceptance() {
   await __workspaceWaitFor(
     () =>
       state.calendars.some(calendar => calendar.id === "acceptance-calendar") &&
-      state.tasks.some(task => task.id === "seed-task"),
+      state.tasks.some(task => task.id === "seed-task") &&
+      [...$("task-list").children].some(
+        row => row.querySelector?.(".item-title")?.textContent === "Seed task from Radicale"
+      ),
     "initial Calendar/VTODO render"
   );
 
   __workspaceAssert(
     $("actions").children.length === 0,
     "Work actions must be hidden before a Task is selected"
+  );
+  __workspaceAssert(
+    $("task-view")?.value === "incomplete",
+    "Work must default to the Incomplete task view"
+  );
+  __workspaceAssert(
+    Boolean(document.getElementById("task-calendar-filter")),
+    "Compact Thunderbird Calendar selector is missing"
   );
   __workspaceAssert(!document.getElementById("selected-uid"), "UID leaked into the simple Work UI");
   __workspaceAssert(!document.getElementById("work-calendar"), "Work Calendar selector leaked into the Work UI");
@@ -279,6 +290,40 @@ async function __runWorkspaceAcceptance() {
     $("actions").children.length === 0,
     "Completed Task must not show Start/Pause/Resume/Complete/Cancel buttons"
   );
+  __workspaceAssert(
+    ![...$("task-list").children].some(
+      row => row.querySelector?.(".item-title")?.textContent === "Seed task from Radicale"
+    ),
+    "Completed Task remained in the default Incomplete view"
+  );
+
+  $("task-view").value = "completed";
+  $("task-view").dispatchEvent(new Event("change"));
+  taskRow = [...$("task-list").children].find(
+    row => row.querySelector?.(".item-title")?.textContent === "Seed task from Radicale"
+  );
+  __workspaceAssert(
+    taskRow,
+    "Completed Task could not be recovered through the explicit Completed view"
+  );
+
+  const settingsBeforeUndo = await AssistantStorage.getSettings();
+  await AssistantStorage.saveSettingsWithUndo({
+    taskView: "completed",
+    taskCalendarId: "acceptance-calendar",
+  });
+  const changedSettings = await AssistantStorage.getSettings();
+  __workspaceAssert(
+    changedSettings.taskView === "completed" &&
+      changedSettings.taskCalendarId === "acceptance-calendar",
+    "Default Task view/Calendar settings did not persist"
+  );
+  const restoredSettings = await AssistantStorage.undoSettings();
+  __workspaceAssert(Boolean(restoredSettings), "Settings Undo returned no previous settings");
+  __workspaceAssert(
+    JSON.stringify(await AssistantStorage.getSettings()) === JSON.stringify(settingsBeforeUndo),
+    "Settings Undo did not restore the previous defaults"
+  );
 
   const audit = await AssistantStorage.listAudit();
   const actions = audit.filter(row => row.scope === "workflow").map(row => row.action);
@@ -294,6 +339,8 @@ async function __runWorkspaceAcceptance() {
     persistentReceipt: true,
     auditPersistent: true,
     simpleUi: true,
+    defaultIncomplete: true,
+    settingsUndo: true,
   };
 }
 
@@ -321,6 +368,180 @@ setTimeout(() => {
 with (root / "workspace.js").open("a", encoding="utf-8") as handle:
     handle.write("\n" + workspace_acceptance + "\n")
 
+tools_acceptance = r'''
+async function __toolsWaitFor(predicate, label, timeoutMs = 15000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (await predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error("Tools timeout: " + label);
+}
+
+function __toolsAssert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+async function __runToolsAcceptance() {
+  await __toolsWaitFor(
+    () => [...$("task-calendar").options].some(option => option.value === "acceptance-calendar"),
+    "Task Calendar options"
+  );
+
+  __toolsAssert(location.hash === "#task-defaults", "Assistant did not navigate to the Task defaults section");
+  __toolsAssert(Boolean(document.getElementById("task-defaults")), "Task defaults section is missing");
+  __toolsAssert($("task-view").value === "incomplete", "Default Task view is not Incomplete");
+  __toolsAssert(
+    [...$("task-calendar").options].some(option => option.value === "acceptance-calendar"),
+    "Thunderbird Calendar list was not reused in Settings"
+  );
+
+  const before = await AssistantStorage.getSettings();
+  const beforeDefaults = {
+    taskView: before.taskView,
+    taskCalendarId: before.taskCalendarId,
+    workCalendarId: before.workCalendarId,
+  };
+  $("task-view").value = "completed";
+  $("task-calendar").value = "acceptance-calendar";
+  $("save-settings").click();
+
+  await __toolsWaitFor(async () => {
+    const settings = await AssistantStorage.getSettings();
+    return settings.taskView === "completed" &&
+      settings.taskCalendarId === "acceptance-calendar";
+  }, "save Task defaults");
+
+  __toolsAssert(!$("undo-settings").hidden, "Undo was not offered after changing defaults");
+  $("undo-settings").click();
+
+  await __toolsWaitFor(async () => {
+    const settings = await AssistantStorage.getSettings();
+    return settings.taskView === beforeDefaults.taskView &&
+      settings.taskCalendarId === beforeDefaults.taskCalendarId &&
+      settings.workCalendarId === beforeDefaults.workCalendarId;
+  }, "undo Task defaults");
+
+  return {
+    ok: true,
+    navigatedToSettings: true,
+    thunderbirdCalendarsReused: true,
+    settingsSaved: true,
+    settingsUndone: true,
+  };
+}
+
+setTimeout(() => {
+  __runToolsAcceptance()
+    .then(result =>
+      browser.runtime.sendMessage({
+        kind: "thunderbird-caldav-tools-acceptance",
+        result,
+      })
+    )
+    .catch(error =>
+      browser.runtime.sendMessage({
+        kind: "thunderbird-caldav-tools-acceptance",
+        result: {
+          ok: false,
+          error:
+            (error?.message || String(error)) +
+            (error?.stack ? "\n" + error.stack : ""),
+        },
+      })
+    );
+}, 800);
+'''
+with (root / "tools.js").open("a", encoding="utf-8") as handle:
+    handle.write("\n" + tools_acceptance + "\n")
+
+logs_acceptance = r'''
+async function __logsWaitFor(predicate, label, timeoutMs = 15000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (await predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error("Logs timeout: " + label);
+}
+
+function __logsAssert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+async function __runLogsAcceptance() {
+  await __logsWaitFor(
+    async () => (await AssistantStorage.listAudit()).length > 0,
+    "existing audit rows"
+  );
+
+  $("search").value = "__definitely_no_log_match__";
+  $("search").dispatchEvent(new Event("input"));
+  __logsAssert(
+    $("logs").textContent === "当前筛选没有匹配的日志。",
+    "Filtered-empty log state is ambiguous"
+  );
+
+  $("search").value = "";
+  $("search").dispatchEvent(new Event("input"));
+  $("clear").click();
+  __logsAssert(!$("clear-confirm").hidden, "Clear confirmation did not open");
+  __logsAssert($("logs").hidden, "Log result area remained visible behind clear confirmation");
+
+  $("clear-no").click();
+  __logsAssert($("clear-confirm").hidden, "Clear confirmation did not close on Back");
+  __logsAssert(!$("logs").hidden, "Log list did not return after cancelling clear");
+
+  $("clear").click();
+  $("clear-yes").click();
+  await __logsWaitFor(
+    async () => (await AssistantStorage.listAudit()).length === 0,
+    "audit clear persistence"
+  );
+  __logsAssert($("clear-confirm").hidden, "Clear confirmation remained visible after clear");
+  __logsAssert(
+    $("log-status").textContent === "✓ 操作日志已清空。",
+    "Successful clear status was not shown"
+  );
+  __logsAssert(
+    $("logs").textContent === "尚无操作日志。",
+    "Cleared log list did not show the true empty state"
+  );
+
+  return {
+    ok: true,
+    filteredEmptyDistinct: true,
+    confirmationExclusive: true,
+    cancelRestoresList: true,
+    clearPersistent: true,
+    emptyStateCorrect: true,
+  };
+}
+
+setTimeout(() => {
+  __runLogsAcceptance()
+    .then(result =>
+      browser.runtime.sendMessage({
+        kind: "thunderbird-caldav-logs-acceptance",
+        result,
+      })
+    )
+    .catch(error =>
+      browser.runtime.sendMessage({
+        kind: "thunderbird-caldav-logs-acceptance",
+        result: {
+          ok: false,
+          error:
+            (error?.message || String(error)) +
+            (error?.stack ? "\n" + error.stack : ""),
+        },
+      })
+    );
+}, 800);
+'''
+with (root / "logs.js").open("a", encoding="utf-8") as handle:
+    handle.write("\n" + logs_acceptance + "\n")
+
 acceptance = r'''
 const __ACCEPTANCE_REPORT = "http://127.0.0.1:8765/report";
 let __acceptanceStage = "startup";
@@ -328,9 +549,23 @@ let __workspaceAcceptanceResolve;
 const __workspaceAcceptancePromise = new Promise(resolve => {
   __workspaceAcceptanceResolve = resolve;
 });
+let __toolsAcceptanceResolve;
+const __toolsAcceptancePromise = new Promise(resolve => {
+  __toolsAcceptanceResolve = resolve;
+});
+let __logsAcceptanceResolve;
+const __logsAcceptancePromise = new Promise(resolve => {
+  __logsAcceptanceResolve = resolve;
+});
 browser.runtime.onMessage.addListener(message => {
   if (message?.kind === "thunderbird-caldav-workspace-acceptance") {
     __workspaceAcceptanceResolve(message.result);
+  }
+  if (message?.kind === "thunderbird-caldav-tools-acceptance") {
+    __toolsAcceptanceResolve(message.result);
+  }
+  if (message?.kind === "thunderbird-caldav-logs-acceptance") {
+    __logsAcceptanceResolve(message.result);
   }
 });
 
@@ -398,7 +633,30 @@ async function __runRealAcceptance() {
   __acceptanceAssert(workspaceResult.persistentReceipt, "Workspace persistent receipt did not pass");
   __acceptanceAssert(workspaceResult.auditPersistent, "Workspace persistent audit did not pass");
   __acceptanceAssert(workspaceResult.simpleUi, "Workspace simple UI contract did not pass");
+  __acceptanceAssert(workspaceResult.defaultIncomplete, "Default Incomplete view did not pass");
+  __acceptanceAssert(workspaceResult.settingsUndo, "Default settings Undo did not pass");
   await browser.tabs.remove(workspaceTab.id);
+
+  __acceptanceStage = "tools-guided-settings";
+  const toolsTab = await browser.tabs.create({
+    url: browser.runtime.getURL("tools.html#task-defaults"),
+  });
+  __acceptanceAssert(Boolean(toolsTab?.id), "Tools tab could not be opened");
+  const toolsResult = await Promise.race([
+    __toolsAcceptancePromise,
+    __acceptanceDelay(30000).then(() => {
+      throw new Error("Timed out waiting for Tools guided-settings acceptance");
+    }),
+  ]);
+  __acceptanceAssert(
+    toolsResult?.ok,
+    "Tools guided-settings acceptance failed: " + (toolsResult?.error || "unknown")
+  );
+  __acceptanceAssert(toolsResult.navigatedToSettings, "Assistant did not land on Task defaults");
+  __acceptanceAssert(toolsResult.thunderbirdCalendarsReused, "Settings did not reuse Thunderbird Calendars");
+  __acceptanceAssert(toolsResult.settingsSaved, "Task defaults did not save");
+  __acceptanceAssert(toolsResult.settingsUndone, "Task defaults could not be undone");
+  await browser.tabs.remove(toolsTab.id);
 
   __acceptanceStage = "taskfix-real-ui";
   const taskFix = await browser.AcceptanceTaskFix.openTasksAndCheck();
@@ -546,6 +804,28 @@ async function __runRealAcceptance() {
   );
   __acceptanceAssert(events.length === 0, "Acceptance left VEVENT test data behind");
 
+  __acceptanceStage = "logs-clear-ui";
+  const logsTab = await browser.tabs.create({
+    url: browser.runtime.getURL("logs.html"),
+  });
+  __acceptanceAssert(Boolean(logsTab?.id), "Logs tab could not be opened");
+  const logsResult = await Promise.race([
+    __logsAcceptancePromise,
+    __acceptanceDelay(30000).then(() => {
+      throw new Error("Timed out waiting for Logs clear acceptance");
+    }),
+  ]);
+  __acceptanceAssert(
+    logsResult?.ok,
+    "Logs clear UI acceptance failed: " + (logsResult?.error || "unknown")
+  );
+  __acceptanceAssert(logsResult.filteredEmptyDistinct, "Filtered empty-state contract failed");
+  __acceptanceAssert(logsResult.confirmationExclusive, "Clear confirmation overlapped log empty state");
+  __acceptanceAssert(logsResult.cancelRestoresList, "Clear cancel did not restore log list");
+  __acceptanceAssert(logsResult.clearPersistent, "Log clear was not persistent");
+  __acceptanceAssert(logsResult.emptyStateCorrect, "Cleared log empty state is incorrect");
+  await browser.tabs.remove(logsTab.id);
+
   return {
     ok: true,
     thunderbirdCalDAV: true,
@@ -563,6 +843,7 @@ async function __runRealAcceptance() {
     simpleUi: true,
     taskFixRealUi: true,
     diagnostics: true,
+    logsClearUi: true,
     createdEventId: event.id,
   };
 }
@@ -812,6 +1093,7 @@ for key in (
     "simpleUi",
     "taskFixRealUi",
     "diagnostics",
+    "logsClearUi",
 ):
     assert data.get(key) is True, (key, data)
 assert data["calendar"]["type"] == "caldav", data

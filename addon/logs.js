@@ -1,6 +1,13 @@
 "use strict";
 const $ = id => document.getElementById(id);
 let records = [];
+let clearing = false;
+
+function setLogStatus(message = "") {
+  const node = $("log-status");
+  node.textContent = message;
+  node.hidden = !message;
+}
 
 function render() {
   const scope = $("scope").value;
@@ -11,8 +18,19 @@ function render() {
   ).reverse();
 
   $("logs").replaceChildren();
+
+  if (clearing) {
+    $("logs").hidden = true;
+    return;
+  }
+  $("logs").hidden = false;
+
+  if (!records.length) {
+    $("logs").textContent = "尚无操作日志。";
+    return;
+  }
   if (!filtered.length) {
-    $("logs").textContent = "没有匹配的日志。";
+    $("logs").textContent = "当前筛选没有匹配的日志。";
     return;
   }
 
@@ -57,15 +75,43 @@ async function loadDiagnostics() {
   }
 }
 
-$("scope").addEventListener("change", render);
-$("search").addEventListener("input", render);
-$("reload").addEventListener("click", load);
-$("clear").addEventListener("click", () => { $("clear-confirm").hidden = false; });
-$("clear-no").addEventListener("click", () => { $("clear-confirm").hidden = true; });
-$("clear-yes").addEventListener("click", async () => {
-  await AssistantStorage.clearAudit();
-  $("clear-confirm").hidden = true;
+$("scope").addEventListener("change", () => {
+  setLogStatus("");
+  render();
+});
+$("search").addEventListener("input", () => {
+  setLogStatus("");
+  render();
+});
+$("reload").addEventListener("click", async () => {
+  setLogStatus("");
   await load();
+});
+$("clear").addEventListener("click", () => {
+  clearing = true;
+  setLogStatus("");
+  $("clear-confirm").hidden = false;
+  render();
+});
+$("clear-no").addEventListener("click", () => {
+  clearing = false;
+  $("clear-confirm").hidden = true;
+  render();
+});
+$("clear-yes").addEventListener("click", async () => {
+  $("clear-yes").disabled = true;
+  try {
+    await AssistantStorage.clearAudit();
+    records = [];
+    $("scope").value = "";
+    $("search").value = "";
+    setLogStatus("✓ 操作日志已清空。");
+  } finally {
+    clearing = false;
+    $("clear-confirm").hidden = true;
+    $("clear-yes").disabled = false;
+    render();
+  }
 });
 $("diag-reload").addEventListener("click", loadDiagnostics);
 $("diag-clear").addEventListener("click", async () => {

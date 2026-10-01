@@ -7,6 +7,9 @@ const state = {
   selected: null,
   runtime: null,
   settings: {},
+  taskView: "incomplete",
+  taskCalendarId: "",
+  filtersInitialized: false,
 };
 
 function displayDate(value) {
@@ -54,14 +57,107 @@ function taskState(task) {
   return {label: "未开始", css: ""};
 }
 
+function dateKey(value) {
+  const text = value?.icalString || "";
+  const match = /^(\d{4})(\d{2})(\d{2})/.exec(text);
+  return match ? match[1] + match[2] + match[3] : "";
+}
+
+function todayKey() {
+  const now = new Date();
+  const y = String(now.getFullYear()).padStart(4, "0");
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return y + m + d;
+}
+
+function taskMatchesView(task, view) {
+  const status = String(task.status || "").toUpperCase();
+  const completed = Boolean(task.completed) || status === "COMPLETED";
+  const cancelled = status === "CANCELLED";
+  const active = !completed && !cancelled;
+  const due = dateKey(task.due);
+  const today = todayKey();
+
+  if (view === "all") return true;
+  if (view === "completed") return completed;
+  if (view === "today") return active && due === today;
+  if (view === "overdue") return active && Boolean(due) && due < today;
+  return active;
+}
+
 function filteredTasks() {
   const search = $("task-search").value.trim().toLocaleLowerCase();
-  const calendarId = String(state.settings.taskCalendarId || "");
   return state.tasks.filter(task => {
-    if (calendarId && task.calendarId !== calendarId) return false;
+    if (state.taskCalendarId && task.calendarId !== state.taskCalendarId) return false;
+    if (!taskMatchesView(task, state.taskView)) return false;
     if (!search) return true;
     return String(task.title || "").toLocaleLowerCase().includes(search);
   });
+}
+
+function enabledTaskCalendars() {
+  return state.calendars.filter(calendar => calendar.supportsTasks && !calendar.disabled);
+}
+
+function renderFilters() {
+  $("task-view").value = state.taskView;
+
+  const select = $("task-calendar-filter");
+  const current = state.taskCalendarId;
+  select.replaceChildren();
+
+  const all = document.createElement("option");
+  all.value = "";
+  all.textContent = "全部 Calendar";
+  select.appendChild(all);
+
+  for (const calendar of enabledTaskCalendars()) {
+    const item = document.createElement("option");
+    item.value = calendar.id;
+    item.textContent = calendar.name + (calendar.readOnly ? " · 只读" : "");
+    select.appendChild(item);
+  }
+
+  if ([...select.options].some(item => item.value === current)) {
+    select.value = current;
+  } else {
+    state.taskCalendarId = "";
+    select.value = "";
+  }
+}
+
+function showSettingsGuidance(message) {
+  const notice = $("notice");
+  notice.replaceChildren();
+  notice.className = "notice";
+  notice.append(document.createTextNode(message + " "));
+  const link = document.createElement("a");
+  link.href = "tools.html#task-defaults";
+  link.textContent = "打开设置";
+  notice.appendChild(link);
+  notice.hidden = false;
+}
+
+function renderGuidance() {
+  const hasDefaultCalendar = Object.prototype.hasOwnProperty.call(
+    state.settings,
+    "taskCalendarId"
+  );
+  const configuredId = String(state.settings.taskCalendarId || "");
+  const configuredAvailable =
+    !configuredId || enabledTaskCalendars().some(calendar => calendar.id === configuredId);
+
+  if (!hasDefaultCalendar && enabledTaskCalendars().length > 1) {
+    showSettingsGuidance("你有多个 Task Calendar。可以选择一个默认 Calendar，以后打开时直接选中它。");
+    return;
+  }
+  if (configuredId && !configuredAvailable) {
+    showSettingsGuidance("原来的默认 Task Calendar 目前不可用。已临时显示全部 Calendar。");
+    return;
+  }
+
+  $("notice").hidden = true;
 }
 
 function renderTasks() {
@@ -124,8 +220,8 @@ async function resolveWorkCalendar(task) {
     throw new Error("没有可写的 Work Calendar。请到“工具”设置。");
   }
 
-  state.settings.workCalendarId = chosen.id;
-  await AssistantStorage.saveSettings({workCalendarId: chosen.id});
+  // A missing default is resolved for this one action only. Do not silently
+  // turn an inferred choice into a persistent user preference.
   return chosen.id;
 }
 
@@ -309,6 +405,15 @@ async function refreshAll() {
     state.runtime = await AssistantStorage.getRuntime();
     state.settings = await AssistantStorage.getSettings();
 
+    if (!state.filtersInitialized) {
+      state.taskView = state.settings.taskView || "incomplete";
+      state.taskCalendarId = String(state.settings.taskCalendarId || "");
+      state.filtersInitialized = true;
+    }
+
+    renderFilters();
+    renderGuidance();
+
     if (state.runtime.currentTask) {
       const active = taskByRef(state.runtime.currentTask);
       if (active) state.selected = active;
@@ -316,7 +421,11 @@ async function refreshAll() {
       state.selected = taskByRef(state.selected);
     }
 
-    $("notice").hidden = true;
+    const visible = filteredTasks();
+    if (state.selected && !visible.some(task => sameTaskRef(state.selected, task))) {
+      state.selected = null;
+    }
+
     renderTasks();
     renderFlow();
     renderReceipt(await lastWorkflowReceipt());
@@ -330,6 +439,22 @@ async function refreshAll() {
 }
 
 $("task-search").addEventListener("input", renderTasks);
+$("task-view").addEventListener("change", event => {
+  state.taskView = event.target.value || "incomplete";
+  if (state.selected && !filteredTasks().some(task => sameTaskRef(state.selected, task))) {
+    state.selected = null;
+  }
+  renderTasks();
+  renderFlow();
+});
+$("task-calendar-filter").addEventListener("change", event => {
+  state.taskCalendarId = event.target.value || "";
+  if (state.selected && !filteredTasks().some(task => sameTaskRef(state.selected, task))) {
+    state.selected = null;
+  }
+  renderTasks();
+  renderFlow();
+});
 $("cancel-confirm-no").addEventListener("click", () => {
   $("cancel-confirm").hidden = true;
 });
@@ -342,6 +467,26 @@ browser.ThunderbirdCalDAV.onItemsChanged.addListener(() => {
   clearTimeout(window.__caldavAssistantRefresh);
   window.__caldavAssistantRefresh = setTimeout(refreshAll, 250);
 });
+
+if (browser.storage?.onChanged) {
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    const changed = changes["caldavAssistant.settings"];
+    if (areaName !== "local" || !changed) return;
+
+    state.settings = changed.newValue || {};
+    state.taskView = state.settings.taskView || "incomplete";
+    state.taskCalendarId = String(state.settings.taskCalendarId || "");
+    state.filtersInitialized = true;
+    renderFilters();
+    renderGuidance();
+
+    if (state.selected && !filteredTasks().some(task => sameTaskRef(state.selected, task))) {
+      state.selected = null;
+    }
+    renderTasks();
+    renderFlow();
+  });
+}
 
 setInterval(updateElapsed, 1000);
 refreshAll();

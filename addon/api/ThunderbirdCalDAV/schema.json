@@ -274,6 +274,51 @@
         "returns": {
           "type": "any"
         }
+      },
+      {
+        "name": "httpRequest",
+        "type": "function",
+        "async": true,
+        "description": "Perform an HTTP(S) request in Thunderbird's privileged parent context, avoiding WebExtension CORS regressions.",
+        "parameters": [
+          {
+            "name": "details",
+            "type": "any"
+          }
+        ],
+        "returns": {
+          "type": "any"
+        }
+      },
+      {
+        "name": "runWpCli",
+        "type": "function",
+        "async": true,
+        "description": "Run the local wp executable for the configured WordPress installation. Supports one temporary uploaded file for media import.",
+        "parameters": [
+          {
+            "name": "details",
+            "type": "any"
+          }
+        ],
+        "returns": {
+          "type": "any"
+        }
+      },
+      {
+        "name": "runWordPressHelper",
+        "type": "function",
+        "async": true,
+        "description": "Run one supported legacy WordPress helper script (find-today-post.sh or create-post.sh) when present.",
+        "parameters": [
+          {
+            "name": "details",
+            "type": "any"
+          }
+        ],
+        "returns": {
+          "type": "any"
+        }
       }
     ],
     "events": [

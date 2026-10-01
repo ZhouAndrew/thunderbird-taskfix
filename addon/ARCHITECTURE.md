@@ -1,4 +1,4 @@
-# CalDAV Assistant Experimental 0.3.6 — simple program boundary
+# CalDAV Assistant Experimental 0.3.7 — simple program boundary
 
 The design goal is deliberately ordinary: a small UI, a set of plain functions, a few plain objects, strict read-back checks, and persistent logs.
 
@@ -10,6 +10,9 @@ existing Task -> select -> Start -> Working -> Pause/Resume -> Complete or Cance
 
 Rules:
 
+- the Work page defaults to the Incomplete view;
+- completed/cancelled Tasks remain available through explicit views instead of being deleted;
+- the Work page may temporarily switch view/Calendar without changing persistent defaults;
 - the Work page never creates a Task;
 - before a Task is selected there are no workflow buttons;
 - only actions valid for the current state are shown;
@@ -59,9 +62,16 @@ If the persistent audit write fails, `logSaved=false` and the UI must say so ins
 
 The Logs page owns full technical detail. The Work page only shows a short result plus a link to Logs.
 
-## Tools
+## Guided defaults and Tools
 
 `tools.html` owns settings and connection tests.
+
+The default Task view and default Task Calendar are ordinary `browser.storage.local` settings. The Calendar value is Thunderbird's existing Calendar id; the add-on does not maintain a second Calendar registry.
+
+Saving those defaults writes one settings undo snapshot. Undo restores the previous Assistant settings object. If a configured Task Calendar disappears, Work temporarily shows All Calendars and links the user back to Tools; it never silently replaces the saved preference.
+
+A missing Work Calendar may be inferred for one workflow action, but that inferred choice is not persisted automatically.
+
 
 Calendar full test:
 
@@ -75,9 +85,17 @@ temporary Draft Post -> read -> update -> read -> temporary media -> read -> del
 
 ## WordPress
 
-`record.html` explicitly creates long-form WordPress records. Completing a Task does not implicitly create a WordPress Post.
+`record.html` is an append-only daily log UI. It has no per-entry title or post-status fields.
 
-The visible result reports concrete Post ID / Media ID values; the full request/result record stays in Logs.
+Normal Record flow:
+
+today's exact daily title -> find published post -> create it only if absent -> upload optional media to that post -> append one Gutenberg log entry -> read back and verify marker
+
+New daily posts use the existing helper title shape, for example `October 1  Thursday  2026`. Lookup remains compatible with older helper-created titles: full or abbreviated month, the day as a numeric token, weekday and year are matched without depending on spacing or token order.
+
+Each text entry is appended as a new Gutenberg paragraph prefixed with local `HH:MM`. Attachments are parented to the same daily post and appended as native Gutenberg blocks: image, video, audio or file/PDF according to MIME type. Multiple Record submissions on the same day reuse the same Post ID.
+
+The visible result reports the daily Post ID / Media ID values; the full request/result record stays in Logs. Completing a Task still does not implicitly create a WordPress post.
 
 ## Data ownership
 

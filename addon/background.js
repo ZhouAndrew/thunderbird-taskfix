@@ -38,11 +38,29 @@ async function ensureWorkspace() {
     return existing[0];
   }
 
-  return browser.spaces.create(
-    SPACE_NAME,
-    "workspace.html",
-    {title: "CalDAV Assistant"}
-  );
+  try {
+    return await browser.spaces.create(
+      SPACE_NAME,
+      "workspace.html",
+      {title: "CalDAV Assistant"}
+    );
+  } catch (error) {
+    // onInstalled/onStartup can race in separate extension contexts. If another
+    // context created the Space after our initial query, reuse it instead of
+    // reporting a false startup failure.
+    const raced = await browser.spaces.query({
+      isSelfOwned: true,
+      name: SPACE_NAME,
+    });
+    if (raced.length) {
+      await diagnostic("space.create-race-reused", {
+        spaceId: raced[0].id ?? null,
+        message: error?.message || String(error),
+      });
+      return raced[0];
+    }
+    throw error;
+  }
 }
 
 async function startup() {
@@ -65,6 +83,18 @@ async function startup() {
   }
 }
 
-browser.runtime.onInstalled.addListener(() => startup().catch(console.error));
-browser.runtime.onStartup.addListener(() => startup().catch(console.error));
-startup().catch(error => console.error("[CalDAVAssistant] startup failed", error));
+let startupPromise = null;
+
+function startupOnce() {
+  if (!startupPromise) {
+    startupPromise = startup().catch(error => {
+      startupPromise = null;
+      throw error;
+    });
+  }
+  return startupPromise;
+}
+
+browser.runtime.onInstalled.addListener(() => startupOnce().catch(console.error));
+browser.runtime.onStartup.addListener(() => startupOnce().catch(console.error));
+startupOnce().catch(error => console.error("[CalDAVAssistant] startup failed", error));

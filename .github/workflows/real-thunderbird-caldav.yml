@@ -6,7 +6,12 @@ on:
       - "rewrite/direct-thunderbird-caldav"
       - "feat/caldav-assistant-workflow-*"
       - "feat/caldav-assistant-simple-*"
+      - "feat/caldav-assistant-guided-*"
   pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   real-thunderbird:

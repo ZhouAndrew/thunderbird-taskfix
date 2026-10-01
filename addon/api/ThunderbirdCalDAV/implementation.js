@@ -6,6 +6,12 @@ var {
 var {
   ExtensionUtils: { ExtensionError },
 } = ChromeUtils.importESModule("resource://gre/modules/ExtensionUtils.sys.mjs");
+var { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
+var { Subprocess } = ChromeUtils.importESModule(
+  "resource://gre/modules/Subprocess.sys.mjs"
+);
 var { cal } = ChromeUtils.importESModule(
   "resource:///modules/calendar/calUtils.sys.mjs"
 );
@@ -158,6 +164,299 @@ async function clearDiagnosticsApi() {
 async function writeDiagnosticApi(component, event, details = {}) {
   const path = appendDiagnosticLog(component, event, details || {});
   return {ok: true, path};
+}
+
+function decodeBase64Binary(value) {
+  const alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const clean = String(value || "").replace(/\s+/g, "").replace(/=+$/, "");
+  let output = "";
+  let bits = 0;
+  let bitCount = 0;
+
+  for (const char of clean) {
+    const index = alphabet.indexOf(char);
+    if (index < 0) throw new ExtensionError("Invalid base64 data");
+    bits = (bits << 6) | index;
+    bitCount += 6;
+    if (bitCount >= 8) {
+      bitCount -= 8;
+      output += String.fromCharCode((bits >> bitCount) & 0xff);
+    }
+  }
+  return output;
+}
+
+async function httpRequestApi(details = {}) {
+  const url = String(details.url || "").trim();
+  if (!/^https?:\/\//i.test(url)) {
+    throw new ExtensionError("HTTP request URL must use http:// or https://");
+  }
+
+  const method = String(details.method || "GET").toUpperCase();
+  const headers = {};
+  for (const [name, value] of Object.entries(details.headers || {})) {
+    headers[String(name)] = String(value);
+  }
+
+  const started = Date.now();
+  appendDiagnosticLog("http", "request.start", {
+    url,
+    method,
+    headers,
+  });
+
+  try {
+    const channel = NetUtil.newChannel({
+      uri: url,
+      loadUsingSystemPrincipal: true,
+    }).QueryInterface(Ci.nsIHttpChannel);
+
+    if (method !== "GET" && method !== "HEAD" &&
+        (details.bodyBase64 || details.bodyText !== undefined && details.bodyText !== null)) {
+      const stream = Cc["@mozilla.org/io/string-input-stream;1"]
+        .createInstance(Ci.nsIStringInputStream);
+      if (details.bodyBase64) {
+        const binary = decodeBase64Binary(details.bodyBase64);
+        stream.setByteStringData(binary);
+      } else {
+        stream.setUTF8Data(String(details.bodyText));
+      }
+      const contentType = Object.entries(headers)
+        .find(([name]) => name.toLowerCase() === "content-type")?.[1]
+        || "application/octet-stream";
+      channel.QueryInterface(Ci.nsIUploadChannel2)
+        .explicitSetUploadStream(stream, String(contentType), -1, method, false);
+    } else {
+      channel.requestMethod = method;
+    }
+
+    for (const [name, value] of Object.entries(headers)) {
+      if (name.toLowerCase() === "content-length") continue;
+      channel.setRequestHeader(name, value, false);
+    }
+
+    const result = await new Promise((resolve, reject) => {
+      NetUtil.asyncFetch(channel, (stream, status, request) => {
+        if (!Components.isSuccessCode(status)) {
+          reject(new Error("network status " + status));
+          return;
+        }
+        const http = request.QueryInterface(Ci.nsIHttpChannel);
+        const count = stream.available();
+        const text = count
+          ? NetUtil.readInputStreamToString(stream, count, {
+              charset: "UTF-8",
+              replacement: 0xfffd,
+            })
+          : "";
+        resolve({
+          ok: http.responseStatus >= 200 && http.responseStatus < 300,
+          status: Number(http.responseStatus || 0),
+          statusText: String(http.responseStatusText || ""),
+          url: String(http.URI?.spec || url),
+          text,
+        });
+      });
+    });
+
+    appendDiagnosticLog("http", "request.success", {
+      url,
+      method,
+      status: result.status,
+      durationMs: Date.now() - started,
+    });
+    return result;
+  } catch (error) {
+    appendDiagnosticLog("http", "request.error", {
+      url,
+      method,
+      durationMs: Date.now() - started,
+      error,
+    });
+    throw new ExtensionError(
+      "Privileged HTTP request failed: " + String(error?.message || error)
+    );
+  }
+}
+
+async function readPipeText(pipe) {
+  if (!pipe || typeof pipe.readString !== "function") return "";
+  let output = "";
+  let chunk;
+  while ((chunk = await pipe.readString())) output += chunk;
+  return output;
+}
+
+function tempFileFromBase64(filename, base64) {
+  const directoryService = Cc["@mozilla.org/file/directory_service;1"]
+    .getService(Ci.nsIProperties);
+  const file = directoryService.get("TmpD", Ci.nsIFile);
+  const safe = String(filename || "caldav-assistant-upload.bin")
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .slice(0, 120) || "caldav-assistant-upload.bin";
+  file.append(safe);
+  file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o600);
+
+  const binary = decodeBase64Binary(base64);
+  const stream = Cc["@mozilla.org/network/file-output-stream;1"]
+    .createInstance(Ci.nsIFileOutputStream);
+  stream.init(file, 0x02 | 0x08 | 0x20, 0o600, 0);
+  stream.write(binary, binary.length);
+  stream.close();
+  return file;
+}
+
+async function runWpCliApi(details = {}) {
+  const executable = String(details.executable || "wp").trim() || "wp";
+  const wordpressPath = String(details.wordpressPath || "").trim();
+  const prefixArgs = Array.isArray(details.prefixArgs)
+    ? details.prefixArgs.map(value => String(value))
+    : [];
+  const rawArgs = Array.isArray(details.args)
+    ? details.args.map(value => String(value))
+    : [];
+
+  if (prefixArgs.length + rawArgs.length > 200) {
+    throw new ExtensionError("Too many WP-CLI arguments");
+  }
+
+  let tempFile = null;
+  let args = [...prefixArgs, ...rawArgs];
+  if (details.tempFileBase64) {
+    tempFile = tempFileFromBase64(
+      details.tempFileName || "caldav-assistant-upload.bin",
+      details.tempFileBase64
+    );
+    args = args.map(value =>
+      value === "__CALDAV_ASSISTANT_TEMP_FILE__" ? tempFile.path : value
+    );
+  }
+
+  if (wordpressPath) {
+    args = [`--path=${wordpressPath}`, ...args];
+  }
+
+  let command = executable;
+  if (!/[\\/]/.test(command)) {
+    command = await Subprocess.pathSearch(command);
+  }
+
+  const started = Date.now();
+  appendDiagnosticLog("wp-cli", "run.start", {
+    executable: command,
+    wordpressPath,
+    operation: args.slice(0, 3),
+  });
+
+  try {
+    const proc = await Subprocess.call({
+      command,
+      arguments: args,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    proc.stdin.close();
+
+    const [stdout, stderr, status] = await Promise.all([
+      readPipeText(proc.stdout),
+      readPipeText(proc.stderr),
+      proc.wait(),
+    ]);
+
+    const exitCode = Number(status?.exitCode ?? -1);
+    appendDiagnosticLog("wp-cli", "run.success", {
+      executable: command,
+      wordpressPath,
+      operation: args.slice(0, 3),
+      exitCode,
+      durationMs: Date.now() - started,
+    });
+
+    return {exitCode, stdout, stderr};
+  } catch (error) {
+    appendDiagnosticLog("wp-cli", "run.error", {
+      executable: command,
+      wordpressPath,
+      operation: args.slice(0, 3),
+      durationMs: Date.now() - started,
+      error,
+    });
+    throw new ExtensionError(
+      "WP-CLI process failed: " + String(error?.message || error)
+    );
+  } finally {
+    if (tempFile?.exists()) {
+      try {
+        tempFile.remove(false);
+      } catch (_error) {}
+    }
+  }
+}
+
+async function runWordPressHelperApi(details = {}) {
+  const helperDir = String(details.helperDir || "").trim();
+  const helperName = String(details.helperName || "").trim();
+  const allowed = new Set(["find-today-post.sh", "create-post.sh"]);
+
+  if (!allowed.has(helperName)) {
+    throw new ExtensionError("Unsupported WordPress helper script");
+  }
+  if (!helperDir) {
+    return {available: false, exitCode: null, stdout: "", stderr: ""};
+  }
+
+  const directory = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+  let resolvedDir = helperDir;
+  if (/^~\//.test(resolvedDir)) {
+    const home = Cc["@mozilla.org/file/directory_service;1"]
+      .getService(Ci.nsIProperties)
+      .get("Home", Ci.nsIFile)
+      .path;
+    resolvedDir = home + resolvedDir.slice(1);
+  }
+  directory.initWithPath(resolvedDir);
+  const file = directory.clone();
+  file.append(helperName);
+  if (!file.exists() || !file.isFile()) {
+    return {available: false, exitCode: null, stdout: "", stderr: ""};
+  }
+
+  const started = Date.now();
+  appendDiagnosticLog("wp-helper", "run.start", {
+    helper: file.path,
+  });
+
+  try {
+    const proc = await Subprocess.call({
+      command: file.path,
+      arguments: [],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    proc.stdin.close();
+    const [stdout, stderr, status] = await Promise.all([
+      readPipeText(proc.stdout),
+      readPipeText(proc.stderr),
+      proc.wait(),
+    ]);
+    const exitCode = Number(status?.exitCode ?? -1);
+    appendDiagnosticLog("wp-helper", "run.success", {
+      helper: file.path,
+      exitCode,
+      durationMs: Date.now() - started,
+    });
+    return {available: true, exitCode, stdout, stderr};
+  } catch (error) {
+    appendDiagnosticLog("wp-helper", "run.error", {
+      helper: file.path,
+      durationMs: Date.now() - started,
+      error,
+    });
+    throw new ExtensionError(
+      "WordPress helper failed: " + String(error?.message || error)
+    );
+  }
 }
 
 async function loggedMutation(action, details, callback) {
@@ -754,6 +1053,9 @@ this.ThunderbirdCalDAV = class extends ExtensionAPI {
         readDiagnostics: readDiagnosticsApi,
         clearDiagnostics: clearDiagnosticsApi,
         writeDiagnostic: writeDiagnosticApi,
+        httpRequest: httpRequestApi,
+        runWpCli: runWpCliApi,
+        runWordPressHelper: runWordPressHelperApi,
 
         onItemsChanged: new EventManager({
           context,

@@ -1,10 +1,14 @@
 # CalDAV Assistant Experimental
 
-Current build: **0.3.6** for official Thunderbird **153.0.2 through 153.1.x**.
+Current build: **0.3.7** for official Thunderbird **153.0.2 through 153.1.x**.
 
-0.3.6 deliberately removes developer-console style UI. The add-on remains a direct Thunderbird Calendar/Tasks provider client; the normal user experience is a small task workflow.
+0.3.7 keeps the 0.3.6 simple UI and adds guided defaults without adding another framework. The add-on remains a direct Thunderbird Calendar/Tasks provider client; the normal user experience is a small task workflow.
 
 ## Work page
+
+The Work page consumes existing VTODOs. Its default view is **Incomplete**, so completed/cancelled history stays available without filling the normal work list. The compact view selector can switch to Today, Overdue, Completed or All.
+
+A compact Calendar selector uses Thunderbird's existing Calendar list. The persistent default is configured under Tools; changing the selector on Work is only a temporary view choice.
 
 The Work page consumes existing VTODOs:
 
@@ -28,9 +32,22 @@ The Work page does **not** show UID, raw VTODO state, internal Assistant state, 
 
 - **Work** — Task lifecycle.
 - **Today** — today's workflow activity.
-- **Record** — explicit WordPress log + attachments.
+- **Record** — append one log entry (and optional attachments) to today's WordPress log post.
 - **Logs** — complete persistent audit + technical diagnostics.
 - **Tools** — settings and read/write connection tests.
+
+## Guided defaults
+
+Tools owns two lightweight user preferences:
+
+- Default Task view (Incomplete by default).
+- Default Task Calendar (including All Calendars).
+
+When more than one Task Calendar exists and no default has been chosen, Work shows a short link to the exact Tools section. If a saved Calendar later disappears, Work falls back to All Calendars for the current session and guides the user back to settings instead of silently replacing the preference.
+
+Saving Calendar/view defaults creates a one-step settings undo snapshot. The user can immediately undo the choice from Tools.
+
+Inferred Work Calendar choices are one-shot only; the Assistant no longer silently persists an inferred Calendar as a user preference.
 
 ## Simple internals
 
@@ -65,6 +82,8 @@ create -> read -> update -> read -> delete -> verify absence
 It never creates a VTODO.
 
 WordPress full test uses a temporary Draft post + test media, verifies them, then deletes them.
+
+Normal Record writes are different: each submission appends one Gutenberg log entry to the single published daily post (new posts keep the existing helper title shape, for example `October 1  Thursday  2026`). The daily post is created only when that day's post does not yet exist; Record never asks the user for a per-entry post title or post status. Text entries keep the existing local `HH:MM` prefix, and attachments are appended as native Gutenberg media/file blocks.
 
 ## Diagnostics
 

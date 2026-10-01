@@ -37,7 +37,7 @@ with zipfile.ZipFile(path) as z:
 
     manifest = json.loads(z.read("manifest.json"))
     assert manifest["name"] == "CalDAV Assistant Experimental"
-    assert manifest["version"] == "0.3.6"
+    assert manifest["version"] == "0.3.7"
     assert manifest["browser_specific_settings"]["gecko"]["id"] == (
         "ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net"
     )
@@ -47,8 +47,9 @@ with zipfile.ZipFile(path) as z:
     assert "ThunderbirdCalDAV" in manifest["experiment_apis"]
     assert "storage" in manifest.get("permissions", [])
     assert "nativeMessaging" not in manifest.get("permissions", [])
-    assert "http://*/*" in manifest.get("optional_permissions", [])
-    assert "https://*/*" in manifest.get("optional_permissions", [])
+    assert "http://*/*" not in manifest.get("permissions", [])
+    assert "https://*/*" not in manifest.get("permissions", [])
+    assert "optional_permissions" not in manifest
 
     background = z.read("background.js").decode()
     direct = z.read("api/ThunderbirdCalDAV/implementation.js").decode()
@@ -98,7 +99,9 @@ with zipfile.ZipFile(path) as z:
     assert "搜索 Task" in workspace_html
     assert "selected-uid" not in workspace_html
     assert "work-calendar" not in workspace_html
-    assert "calendar-filter" not in workspace_html
+    assert 'id="task-view"' in workspace_html
+    assert 'id="task-calendar-filter"' in workspace_html
+    assert ">未完成<" in workspace_html
     assert "VTODO" not in workspace_html
     assert 'id="selected-flow-state"' not in workspace_html
     assert ">Assistant<" not in workspace_html
@@ -110,26 +113,66 @@ with zipfile.ZipFile(path) as z:
     assert "AssistantExecutor.cancel" in workspace
     assert "结果已写入日志" in workspace
     assert "resolveWorkCalendar" in workspace
+    assert 'state.taskView = state.settings.taskView || "incomplete"' in workspace
+    assert 'view === "completed"' in workspace
+    assert 'view === "overdue"' in workspace
+    assert "打开设置" in workspace
+    assert "browser.storage.onChanged" in workspace
 
     # One simple persistence function freezes log-before-display order.
     assert "persistResult" in storage
+    assert "saveSettingsWithUndo" in storage
+    assert "undoSettings" in storage
+    assert "snapshot.keys" in storage
     assert 'persistResult(receipt, "workflow")' in executor
     assert 'persistResult(result, "connection")' in connection
     assert 'persistResult(result, "wordpress")' in wordpress
 
     # Connection and settings live under Tools, not on the Work page.
-    assert "Task Calendar" in tools_html
+    assert "默认 Task 视图" in tools_html
+    assert "默认 Task Calendar" in tools_html
     assert "Work Calendar" in tools_html
+    assert "undo-settings" in tools_html
+    assert "saveSettingsWithUndo" in tools
+    assert "undoSettings" in tools
+    assert "previous: changed.previous" not in tools
+    assert "details: {restored}" not in tools
     assert "Calendar 完整读写" in tools_html
     assert "WordPress 完整读写" in tools_html
+    assert "WordPress 连接方式" in tools_html
+    assert "Application Password / REST" in tools_html
+    assert "WP-CLI（兼容旧脚本）" in tools_html
+    assert 'id="wp-path"' in tools_html
+    assert 'id="wp-cli"' in tools_html
+    assert "httpRequest" in direct
+    assert "runWpCli" in direct
+    assert "Subprocess.sys.mjs" in direct
+    assert "Thunderbird privileged HTTP bridge" in wordpress
+    assert "WordPress path is not configured for WP-CLI" in wordpress
     assert "No VTODO was created" in connection
     assert "AssistantConnection.fullCalendarWriteTest" in tools
 
-    # WordPress result keeps concrete IDs while full detail is in Logs.
-    assert 'status: "draft"' in wordpress
-    assert "read-back WordPress post" in wordpress
-    assert "Post ID" in z.read("record.js").decode()
-    assert "Media ID" in z.read("record.js").decode()
+    # WordPress Record appends one entry to one daily post; per-entry title/status
+    # fields must not return to the simple UI.
+    record_html = z.read("record.html").decode()
+    record_js = z.read("record.js").decode()
+    assert 'id="title"' not in record_html
+    assert 'id="post-status"' not in record_html
+    assert "每次只追加一条" in record_html
+    assert "追加日志" in record_html
+    assert "dailyLogTitle" in wordpress
+    assert "ensureDailyLogPost" in wordpress
+    assert "append + read-back daily WordPress log" in wordpress
+    assert "wordpress.append-log" in wordpress
+    assert "currentTimeText" in wordpress
+    assert "mediaBlock" in wordpress
+    assert "wp:image" in wordpress
+    assert "wp:video" in wordpress
+    assert "wp:audio" in wordpress
+    assert "wp:file" in wordpress
+    assert "今日日志" in record_js
+    assert "Post ID" in record_js
+    assert "Media ID" in record_js
 
     assert "AssistantStorage.listAudit" in logs
     assert "ExtensionUtils" in direct and "ExtensionError" in direct
@@ -148,4 +191,4 @@ with zipfile.ZipFile(path) as z:
     assert "apply.sh" not in names
     assert "patch_omnijar.py" not in names
 
-print("caldav-assistant-experimental-0.3.6-xpi-contract: PASS")
+print("caldav-assistant-experimental-0.3.7-xpi-contract: PASS")

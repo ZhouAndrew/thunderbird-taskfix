@@ -16,8 +16,8 @@ function render(result) {
 
   const lines = [];
   if (result.post) {
-    lines.push("Post ID: " + result.post.id);
-    lines.push("Status: " + result.post.status);
+    lines.push("今日日志: " + (result.post.title || "WordPress") + " · Post ID " + result.post.id);
+    if (result.post.createdToday) lines.push("今天的日志文章已自动创建");
     if (result.post.link) lines.push("URL: " + result.post.link);
   }
   for (const media of result.media || []) {
@@ -41,16 +41,44 @@ function render(result) {
   }
 }
 
+$("submit").disabled = true;
+
+AssistantWordPress.getConfig()
+  .then(() => {
+    $("submit").disabled = false;
+  })
+  .catch(error => {
+    render({
+      success: false,
+      summary: "WordPress 设置读取失败：" + String(error?.message || error),
+      media: [],
+    });
+  });
+
 $("submit").addEventListener("click", async () => {
   $("submit").disabled = true;
   try {
     const result = await AssistantWordPress.createLog({
-      title: $("title").value,
       content: $("content").value,
-      status: $("post-status").value,
       files: [...$("files").files],
     });
     render(result);
+    if (result.success) {
+      $("content").value = "";
+      $("files").value = "";
+    }
+  } catch (error) {
+    const message = String(error?.message || error || "Unknown error");
+    const failed = await AssistantStorage.persistResult({
+      action: "wordpress.append-log",
+      success: false,
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      summary: "WordPress log append failed: " + message,
+      steps: [{name: "WordPress connection", success: false, error: message}],
+      media: [],
+    }, "wordpress");
+    render(failed);
   } finally {
     $("submit").disabled = false;
   }

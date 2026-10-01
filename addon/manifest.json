@@ -1,28 +1,59 @@
 {
   "manifest_version": 2,
-  "name": "Thunderbird TaskFix",
-  "description": "Standalone Thunderbird task-list enhancement for reliable recurring-safe multi-select Status, Progress, Category, Priority and completion editing.",
-  "version": "0.2.1",
+  "name": "CalDAV Assistant Experimental",
+  "description": "State-driven CalDAV/Radicale task workflow with verified work sessions, independent connection diagnostics, persistent audit logs and WordPress logging.",
+  "version": "0.3.5",
   "author": "ZhouAndrew",
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "ZhouAndrew.thunderbird-taskfix@addons.thunderbird.net",
-      "strict_min_version": "153.0",
-      "strict_max_version": "153.*"
+      "id": "ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net",
+      "strict_min_version": "153.0.2",
+      "strict_max_version": "153.1.*"
     }
   },
   "experiment_apis": {
     "TaskFix": {
       "schema": "api/TaskFix/schema.json",
       "parent": {
-        "scopes": ["addon_parent"],
-        "paths": [["TaskFix"]],
+        "scopes": [
+          "addon_parent"
+        ],
+        "paths": [
+          [
+            "TaskFix"
+          ]
+        ],
         "script": "api/TaskFix/implementation.js",
-        "events": ["startup"]
+        "events": [
+          "startup"
+        ]
+      }
+    },
+    "ThunderbirdCalDAV": {
+      "schema": "api/ThunderbirdCalDAV/schema.json",
+      "parent": {
+        "scopes": [
+          "addon_parent"
+        ],
+        "paths": [
+          [
+            "ThunderbirdCalDAV"
+          ]
+        ],
+        "script": "api/ThunderbirdCalDAV/implementation.js"
       }
     }
-  }
+  },
+  "permissions": [
+    "storage"
+  ],
+  "optional_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ]
 }

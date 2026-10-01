@@ -13,20 +13,34 @@ jobs:
         run: |
           chmod +x selftest.sh
           ./selftest.sh
-      - name: Standalone add-on syntax and behavior
+      - name: Add-on syntax and behavior
         run: |
           node --check addon/content/taskfix-window.js
           node --check addon/api/TaskFix/implementation.js
+          node --check addon/api/ThunderbirdCalDAV/implementation.js
           node --check addon/background.js
+          node --check addon/core/storage.js
+          node --check addon/core/executor.js
+          node --check addon/core/connection.js
+          node --check addon/core/wordpress.js
+          node --check addon/workspace.js
+          node --check addon/logs.js
+          node --check addon/connections.js
+          node --check addon/record.js
+          node --check addon/today.js
           node tests/taskfix-addon-harness.js
-      - name: Build standalone XPI
+          node tests/direct-caldav-api-harness.js
+          node tests/workflow-harness.js
+          node tests/wordpress-connector-harness.js
+          bash -n tests/real-thunderbird-caldav.sh
+      - name: Build CalDAV Assistant Experimental XPI
         run: |
           chmod +x packaging/build-xpi.sh
-          packaging/build-xpi.sh /tmp/thunderbird-taskfix-0.2.1.xpi
-          python3 tests/check-xpi.py /tmp/thunderbird-taskfix-0.2.1.xpi
+          packaging/build-xpi.sh /tmp/caldav-assistant-experimental-0.3.5.xpi
+          python3 tests/check-xpi.py /tmp/caldav-assistant-experimental-0.3.5.xpi
       - name: Publish tested XPI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: thunderbird-taskfix-0.2.1
-          path: /tmp/thunderbird-taskfix-0.2.1.xpi
+          name: caldav-assistant-experimental-0.3.5
+          path: /tmp/caldav-assistant-experimental-0.3.5.xpi
           if-no-files-found: error

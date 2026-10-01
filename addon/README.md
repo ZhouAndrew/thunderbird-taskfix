@@ -1,33 +1,46 @@
-# Thunderbird TaskFix XPI
+# CalDAV Assistant Experimental
 
-Current standalone build: 0.2.1 for official Thunderbird 153.x.
+Current build: **0.3.5** for official Thunderbird **153.0.2 through 153.1.x**.
 
-This is a standalone Thunderbird enhancement add-on. It does not patch or replace Thunderbird application files and has no dependency on any companion application.
+This branch keeps the direct Thunderbird Calendar/Tasks provider architecture from the 0.3.x rewrite, but replaces the CRUD-lab workspace with the actual CalDAV Assistant workflow.
 
-## 0.2.1
+## Main workflow
 
-- Standalone add-on identity and packaging; no `apply.sh` is needed for normal use.
-- Explicit background activation calls the Experiment API after install/startup, while the Experiment startup hook remains as a fallback.
-- Existing Thunderbird main windows are injected immediately; future main windows are handled by the registered window listener.
-- Resolves the real selected rows from the active task tree, including Ctrl/Shift multi-selection.
-- Recurring-safe batch mutation core groups selected occurrences by recurring parent before committing changes.
-- Adds a complete Status menu in both the task toolbar and task right-click context menu.
-- Status values: Not specified, Needs Action, In Progress, Completed, Cancelled.
-- Multi-select Mark Completed / Progress uses the same recurring-safe batch core.
-- Multi-select Category uses the same recurring-safe batch core.
-- Multi-select Priority is also routed through the recurring-safe batch core.
-- Delete remains Thunderbird's native delete command because Thunderbird already receives the complete selected task list and owns recurrence/deletion confirmation semantics.
-- Disabling or uninstalling this add-on restores the original Thunderbird functions and removes injected menus.
+The Work page consumes already existing VTODOs:
 
-## Acceptance checklist
+select existing Task -> Start -> Working -> Pause/Resume -> Complete or Cancel
 
-1. Install the XPI into an unmodified official Thunderbird 153.x profile.
-2. Ctrl/Shift-select 3 ordinary tasks.
-3. Mark Completed: all 3 must become completed.
-4. Change Status to Cancelled, Needs Action, In Progress and Completed: every selected task must change.
-5. Change Category: every selected task must change and mixed-category selection must be handled.
-6. Change Priority: every selected task must change.
-7. Repeat completion/status/category/priority tests with multiple selected occurrences of one recurring VTODO.
-8. Delete multiple selected tasks with Thunderbird's native Delete button and verify the normal confirmation/recurrence behavior.
-9. Sync, restart Thunderbird, and verify persistence.
-10. Disable/uninstall the extension and verify the original Thunderbird UI/handlers are restored.
+It does not create Tasks. Start/Resume create Work VEVENTs. Pause/Complete/Cancel close the current Work VEVENT. Every supported write is followed by provider read-back verification and a persistent on-screen receipt.
+
+## Program blocks
+
+- **Work**: Task lifecycle only.
+- **Executor**: performs Start/Pause/Resume/Complete/Cancel and verifies writes.
+- **Connections**: tests Thunderbird/CalDAV and WordPress read/write paths.
+- **Logs**: persistent audit, separate from the workflow UI.
+- **Record**: explicit WordPress post + attachment creation with Post/Media IDs in the receipt.
+- **Today**: workflow activity derived from the local audit.
+
+See ARCHITECTURE.md for the frozen responsibility boundary.
+
+## Direct Thunderbird architecture
+
+The add-on uses ThunderbirdCalDAV Experiment API -> Thunderbird Calendar/Tasks provider -> configured CalDAV server. It uses cal.manager, getItemsAsArray(), getItem(), addItem(), modifyItem() and deleteItem().
+
+There is no Native Host, no Python companion process, and no second CalDAV client.
+
+## Local auxiliary state
+
+browser.storage.local stores only Assistant state such as current Task pointer, current Work VEVENT pointer, accumulated time, settings, latest receipt and audit history. Task/Event facts remain in Thunderbird/CalDAV.
+
+No success/failure information may exist only as a disappearing popup. The latest receipt remains visible on Work and full history is available on Logs.
+
+## Read/write diagnostics
+
+The Calendar full test creates a temporary VEVENT only, then performs create -> read -> update -> read -> delete -> verify absence. It creates no VTODO.
+
+The WordPress full test uses a temporary Draft post and test media, verifies both, then deletes them.
+
+## Testing
+
+CI covers the direct provider API, workflow state machine, WordPress connector, XPI contract, real Thunderbird + real Radicale workflow, persistent audit, Work VEVENT lifecycle, and restart of the same Thunderbird profile.

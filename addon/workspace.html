@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>CalDAV Assistant Experimental</title>
+  <link rel="stylesheet" href="workspace.css">
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <div>
+        <h1>CalDAV Assistant Experimental</h1>
+        <p>选择已有 Task，然后按状态走 Start → Pause/Resume → Complete/Cancel。</p>
+      </div>
+      <div class="top-actions">
+        <select id="calendar-filter" aria-label="Task Calendar"></select>
+        <button id="refresh">刷新</button>
+      </div>
+    </header>
+
+    <nav class="tool-nav" aria-label="CalDAV Assistant tools">
+      <a class="active" href="workspace.html">工作</a>
+      <a href="record.html">记录</a>
+      <a href="today.html">今天</a>
+      <a href="connections.html">连接</a>
+      <a href="logs.html">日志</a>
+    </nav>
+
+    <div id="status" class="status">正在读取 Thunderbird Calendar…</div>
+
+    <div class="work-layout">
+      <section class="card task-browser">
+        <div class="section-title">
+          <h2>Task</h2>
+          <span id="task-count">0</span>
+        </div>
+        <input id="task-search" type="search" placeholder="搜索现有 Task">
+        <div id="task-list" class="item-list"></div>
+      </section>
+
+      <section class="card flow-card">
+        <h2>当前状态</h2>
+        <div id="no-selection" class="empty-state">
+          从左边选择一个 Task。没有选择 Task 时不会显示工作动作。
+        </div>
+
+        <div id="selection" hidden>
+          <dl class="state-grid">
+            <dt>Task</dt><dd id="selected-title"></dd>
+            <dt>Calendar</dt><dd id="selected-calendar"></dd>
+            <dt>UID</dt><dd id="selected-uid" class="mono"></dd>
+            <dt>VTODO</dt><dd id="selected-vtodo-state"></dd>
+            <dt>Assistant</dt><dd id="selected-flow-state"></dd>
+            <dt>Due</dt><dd id="selected-due"></dd>
+            <dt>Category</dt><dd id="selected-category"></dd>
+            <dt>本次累计</dt><dd id="selected-elapsed">00:00:00</dd>
+          </dl>
+
+          <label class="compact-field">
+            Work Calendar
+            <select id="work-calendar"></select>
+          </label>
+
+          <div id="actions" class="action-row"></div>
+
+          <div id="cancel-confirm" class="inline-confirm" hidden>
+            <strong>确认取消这个 Task？</strong>
+            <button id="cancel-confirm-yes" class="danger">确认取消</button>
+            <button id="cancel-confirm-no">返回</button>
+          </div>
+
+          <p id="flow-note" class="muted"></p>
+        </div>
+      </section>
+    </div>
+
+    <section class="card receipt-card">
+      <div class="section-title">
+        <h2>最近一次操作回执</h2>
+        <span>不会自动消失</span>
+      </div>
+      <div id="receipt" class="receipt">
+        尚无操作回执。
+      </div>
+    </section>
+  </main>
+
+  <script src="core/storage.js"></script>
+  <script src="core/executor.js"></script>
+  <script src="workspace.js"></script>
+</body>
+</html>

@@ -274,6 +274,21 @@
         "returns": {
           "type": "any"
         }
+      },
+      {
+        "name": "httpRequest",
+        "type": "function",
+        "async": true,
+        "description": "Perform an HTTP(S) request in Thunderbird's privileged parent context, avoiding WebExtension CORS regressions.",
+        "parameters": [
+          {
+            "name": "details",
+            "type": "any"
+          }
+        ],
+        "returns": {
+          "type": "any"
+        }
       }
     ],
     "events": [

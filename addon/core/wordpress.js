@@ -318,7 +318,7 @@
     });
 
     const read = await request(`/posts/${post.id}?context=edit`);
-    if (read?.id !== post.id || rawTitle(read) !== title) {
+    if (read?.id !== post.id || !matchesDailyLogTitle(rawTitle(read), date)) {
       throw new Error("WordPress daily log create read-back mismatch.");
     }
     return {post: read, title, created: true};

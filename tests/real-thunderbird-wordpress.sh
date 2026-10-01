@@ -152,6 +152,15 @@ async function __runRealWordPressAcceptance() {
   quick.addEventListener("click", () => {
     void __wpAcceptPost("/quick-clicked");
   }, {once: true});
+  const quickRect = quick.getBoundingClientRect();
+  await __wpAcceptPost("/quick-geometry", {
+    innerScreenX: window.mozInnerScreenX,
+    innerScreenY: window.mozInnerScreenY,
+    x: quickRect.x,
+    y: quickRect.y,
+    width: quickRect.width,
+    height: quickRect.height,
+  });
   await __wpAcceptPost("/quick-ready");
 
   const quickResult = await __wpAcceptWaitReceipt("connection.wordpress-quick");
@@ -168,6 +177,15 @@ async function __runRealWordPressAcceptance() {
   full.style.top = "24px";
   full.style.zIndex = "999999";
   full.focus();
+  const fullRect = full.getBoundingClientRect();
+  await __wpAcceptPost("/full-geometry", {
+    innerScreenX: window.mozInnerScreenX,
+    innerScreenY: window.mozInnerScreenY,
+    x: fullRect.x,
+    y: fullRect.y,
+    width: fullRect.width,
+    height: fullRect.height,
+  });
   await __wpAcceptPost("/full-ready");
 
   const fullResult = await __wpAcceptWaitReceipt("connection.wordpress-full-write", 45000);
@@ -293,12 +311,20 @@ xdotool getwindowgeometry "$WIN" || true
 # The acceptance copy fixes wp-quick at left:24px/top:24px in a popup window.
 # This is a real X mouse event, so Thunderbird's user-activation bookkeeping
 # sees the same kind of click as a person pressing the button.
-# Openbox adds a title bar above the WebExtension content. The acceptance
-# button is fixed at content left/top 24px, so click well inside it after accounting
-# for decorations. Require the DOM click marker before proceeding: this proves the
-# permission request is entered from a real native user event rather than a JS call.
-xdotool windowactivate --sync "$WIN"
-xdotool mousemove --window "$WIN" 90 75 click 1
+# Firefox exposes the exact content viewport origin through mozInnerScreenX/Y.
+# Use that plus the real DOM button rectangle, then issue a native absolute X click.
+# This avoids guessing title-bar/frame sizes and still satisfies the user-gesture gate.
+read CLICK_X CLICK_Y < <(python3 - "$TMP/quick-geometry" <<'PY'
+import json, sys
+d=json.load(open(sys.argv[1]))
+print(
+    round(d["innerScreenX"] + d["x"] + d["width"]/2),
+    round(d["innerScreenY"] + d["y"] + d["height"]/2),
+)
+PY
+)
+echo "wp-quick absolute click: $CLICK_X,$CLICK_Y"
+xdotool mousemove "$CLICK_X" "$CLICK_Y" click 1
 for _ in $(seq 1 50); do
   [[ -f "$TMP/quick-clicked" ]] && break
   sleep 0.1
@@ -320,8 +346,17 @@ fi
 [[ -f "$TMP/full-ready" ]] || { echo "Quick WordPress acceptance did not complete"; exit 1; }
 
 echo "== Native mouse click: run real full WordPress write/read/update/media/delete =="
-# full button is also moved to the same fixed acceptance position after quick succeeds.
-xdotool mousemove --window "$WIN" 80 42 click 1
+read FULL_X FULL_Y < <(python3 - "$TMP/full-geometry" <<'PY'
+import json, sys
+d=json.load(open(sys.argv[1]))
+print(
+    round(d["innerScreenX"] + d["x"] + d["width"]/2),
+    round(d["innerScreenY"] + d["y"] + d["height"]/2),
+)
+PY
+)
+echo "wp-full absolute click: $FULL_X,$FULL_Y"
+xdotool mousemove "$FULL_X" "$FULL_Y" click 1
 
 for _ in $(seq 1 600); do
   [[ -s "$TMP/report.json" ]] && break

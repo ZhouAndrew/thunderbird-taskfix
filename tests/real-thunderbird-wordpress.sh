@@ -194,15 +194,15 @@ cat >"$HELPER_DIR/find-today-post.sh" <<SH
 #!/usr/bin/env bash
 set -euo pipefail
 echo find >>"$HELPER_USED"
-month_full="$(date +%B)"
-month_abbr="$(date +%b)"
-day="$((10#$(date +%d)))"
-weekday="$(date +%A)"
-year="$(date +%Y)"
-json="$("$WPCLI_BRIDGE" --path=/var/www/html post list \
+month_full="\$(date +%B)"
+month_abbr="\$(date +%b)"
+day="\$((10#\$(date +%d)))"
+weekday="\$(date +%A)"
+year="\$(date +%Y)"
+json="\$("$WPCLI_BRIDGE" --path=/var/www/html post list \
   --post_type=post --post_status=any \
   --fields=ID,post_title --format=json)"
-python3 - "$month_full" "$month_abbr" "$day" "$weekday" "$year" "$json" <<'PY'
+python3 - "\$month_full" "\$month_abbr" "\$day" "\$weekday" "\$year" "\$json" <<'PY'
 import json, re, sys
 month_full, month_abbr, day, weekday, year, raw = sys.argv[1:]
 items = json.loads(raw)
@@ -225,20 +225,20 @@ cat >"$HELPER_DIR/create-post.sh" <<SH
 #!/usr/bin/env bash
 set -euo pipefail
 echo create >>"$HELPER_USED"
-existing="$("$HELPER_DIR/find-today-post.sh")"
-if [[ "$existing" =~ ^[0-9]+$ ]]; then
-  echo "✔ Today's post exists: $existing"
+existing="\$("$HELPER_DIR/find-today-post.sh")"
+if [[ "\$existing" =~ ^[0-9]+$ ]]; then
+  echo "✔ Today's post exists: \$existing"
   exit 0
 fi
-month_full="$(date +%B)"
-day="$((10#$(date +%d)))"
-weekday="$(date +%A)"
-year="$(date +%Y)"
-post_title="$month_full $day  $weekday  $year"
-post_id="$("$WPCLI_BRIDGE" --path=/var/www/html post create \
+month_full="\$(date +%B)"
+day="\$((10#\$(date +%d)))"
+weekday="\$(date +%A)"
+year="\$(date +%Y)"
+post_title="\$month_full \$day  \$weekday  \$year"
+post_id="\$("$WPCLI_BRIDGE" --path=/var/www/html post create \
   --post_type=post --post_status=publish \
-  --post_title="$post_title" --porcelain)"
-echo "✔ Created today's post: $post_id"
+  --post_title="\$post_title" --porcelain)"
+echo "✔ Created today's post: \$post_id"
 SH
 chmod +x "$HELPER_DIR/find-today-post.sh" "$HELPER_DIR/create-post.sh"
 echo "PASS: legacy find-today-post.sh/create-post.sh fixture prepared"

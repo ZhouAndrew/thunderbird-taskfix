@@ -83,7 +83,7 @@ It never creates a VTODO.
 
 WordPress full test uses a temporary Draft post + test media, verifies them, then deletes them.
 
-Normal Record writes are different: each submission appends one Gutenberg log entry to the single published daily post (for example `October 1 Thursday 2026`). The daily post is created only when that day's post does not yet exist; Record never asks the user for a per-entry post title or post status.
+Normal Record writes are different: each submission appends one Gutenberg log entry to the single published daily post (new posts keep the existing helper title shape, for example `October 1  Thursday  2026`). The daily post is created only when that day's post does not yet exist; Record never asks the user for a per-entry post title or post status. Text entries keep the existing local `HH:MM` prefix, and attachments are appended as native Gutenberg media/file blocks.
 
 ## Diagnostics
 

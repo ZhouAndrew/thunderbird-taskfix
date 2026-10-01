@@ -218,7 +218,7 @@ async function httpRequestApi(details = {}) {
         .createInstance(Ci.nsIStringInputStream);
       if (details.bodyBase64) {
         const binary = decodeBase64Binary(details.bodyBase64);
-        stream.setData(binary, binary.length);
+        stream.setByteStringData(binary);
       } else {
         stream.setUTF8Data(String(details.bodyText));
       }

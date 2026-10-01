@@ -97,20 +97,65 @@ fi
 
 WPCLI=(docker run --rm --network "$NET_NAME" -v "$VOL_NAME":/var/www/html -e WORDPRESS_DB_HOST="$DB_NAME":3306 -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress wordpress:cli)
 "${WPCLI[@]}" --path=/var/www/html core install \
-  --url=http://localhost:8080 \
+  --url="$WP_BASE_URL" \
   --title="Thunderbird WordPress Acceptance" \
   --admin_user=wp_user \
   --admin_password=admin-test-only \
   --admin_email=acceptance@example.test \
   --skip-email >/dev/null
 
+echo "== Start private-CA HTTPS reverse proxy =="
+mkdir -p "$TMP/certs"
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout "$TMP/certs/ca.key" \
+  -out "$TMP/certs/ca.crt" \
+  -subj "/CN=CalDAV Assistant Test CA" \
+  -days 2 >/dev/null 2>&1
+openssl req -newkey rsa:2048 -nodes \
+  -keyout "$TMP/certs/server.key" \
+  -out "$TMP/certs/server.csr" \
+  -subj "/CN=localhost" >/dev/null 2>&1
+cat >"$TMP/certs/server.ext" <<'EOF'
+subjectAltName=DNS:localhost,IP:127.0.0.1
+extendedKeyUsage=serverAuth
+EOF
+openssl x509 -req \
+  -in "$TMP/certs/server.csr" \
+  -CA "$TMP/certs/ca.crt" \
+  -CAkey "$TMP/certs/ca.key" \
+  -CAcreateserial \
+  -out "$TMP/certs/server.crt" \
+  -days 2 -sha256 \
+  -extfile "$TMP/certs/server.ext" >/dev/null 2>&1
+
+cat >"$TMP/Caddyfile" <<EOF
+:443 {
+  tls /etc/caddy/certs/server.crt /etc/caddy/certs/server.key
+  reverse_proxy $WEB_NAME:80
+}
+EOF
+
+docker run -d --name "$CADDY_NAME" \
+  --network "$NET_NAME" \
+  -p 8443:443 \
+  -v "$TMP/Caddyfile:/etc/caddy/Caddyfile:ro" \
+  -v "$TMP/certs:/etc/caddy/certs:ro" \
+  caddy:2.10-alpine >/dev/null
+
+HTTPS_READY=0
 for _ in $(seq 1 120); do
-  if curl -fsS http://localhost:8080/wp-json/ >/dev/null 2>&1; then
+  if curl --cacert "$TMP/certs/ca.crt" -fsS "$WP_BASE_URL/wp-json/" >/dev/null 2>&1; then
+    HTTPS_READY=1
     break
   fi
   sleep 1
 done
-curl -fsS http://localhost:8080/wp-json/ >/dev/null
+if [[ "$HTTPS_READY" != 1 ]]; then
+  echo "HTTPS WordPress fixture failed to become ready"
+  docker logs "$CADDY_NAME" || true
+  docker logs "$WEB_NAME" || true
+  exit 1
+fi
 docker exec "$WEB_NAME" chown -R www-data:www-data /var/www/html
 "${WPCLI[@]}" --path=/var/www/html rewrite structure '/%postname%/' --hard >/dev/null
 "${WPCLI[@]}" --path=/var/www/html rewrite flush --hard >/dev/null
@@ -118,8 +163,9 @@ APP_PASS="$("${WPCLI[@]}" --path=/var/www/html user application-password create 
 test -n "$APP_PASS"
 WP_AUTH="$(printf 'wp_user:%s' "$APP_PASS" | base64 -w0)"
 curl -fsS \
+  --cacert "$TMP/certs/ca.crt" \
   -H "Authorization: Basic $WP_AUTH" \
-  "http://localhost:8080/wp-json/wp/v2/users/me?context=edit" \
+  "$WP_BASE_URL/wp-json/wp/v2/users/me?context=edit" \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("id")==1 and d.get("slug")=="wp_user", d'
 echo "PASS: real WordPress + real Application Password prepared"
 

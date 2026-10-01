@@ -455,6 +455,93 @@ setTimeout(() => {
 with (root / "tools.js").open("a", encoding="utf-8") as handle:
     handle.write("\n" + tools_acceptance + "\n")
 
+logs_acceptance = r'''
+async function __logsWaitFor(predicate, label, timeoutMs = 15000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (await predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error("Logs timeout: " + label);
+}
+
+function __logsAssert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+async function __runLogsAcceptance() {
+  await __logsWaitFor(
+    async () => (await AssistantStorage.listAudit()).length > 0,
+    "existing audit rows"
+  );
+
+  $("search").value = "__definitely_no_log_match__";
+  $("search").dispatchEvent(new Event("input"));
+  __logsAssert(
+    $("logs").textContent === "当前筛选没有匹配的日志。",
+    "Filtered-empty log state is ambiguous"
+  );
+
+  $("search").value = "";
+  $("search").dispatchEvent(new Event("input"));
+  $("clear").click();
+  __logsAssert(!$("clear-confirm").hidden, "Clear confirmation did not open");
+  __logsAssert($("logs").hidden, "Log result area remained visible behind clear confirmation");
+
+  $("clear-no").click();
+  __logsAssert($("clear-confirm").hidden, "Clear confirmation did not close on Back");
+  __logsAssert(!$("logs").hidden, "Log list did not return after cancelling clear");
+
+  $("clear").click();
+  $("clear-yes").click();
+  await __logsWaitFor(
+    async () => (await AssistantStorage.listAudit()).length === 0,
+    "audit clear persistence"
+  );
+  __logsAssert($("clear-confirm").hidden, "Clear confirmation remained visible after clear");
+  __logsAssert(
+    $("log-status").textContent === "✓ 操作日志已清空。",
+    "Successful clear status was not shown"
+  );
+  __logsAssert(
+    $("logs").textContent === "尚无操作日志。",
+    "Cleared log list did not show the true empty state"
+  );
+
+  return {
+    ok: true,
+    filteredEmptyDistinct: true,
+    confirmationExclusive: true,
+    cancelRestoresList: true,
+    clearPersistent: true,
+    emptyStateCorrect: true,
+  };
+}
+
+setTimeout(() => {
+  __runLogsAcceptance()
+    .then(result =>
+      browser.runtime.sendMessage({
+        kind: "thunderbird-caldav-logs-acceptance",
+        result,
+      })
+    )
+    .catch(error =>
+      browser.runtime.sendMessage({
+        kind: "thunderbird-caldav-logs-acceptance",
+        result: {
+          ok: false,
+          error:
+            (error?.message || String(error)) +
+            (error?.stack ? "\n" + error.stack : ""),
+        },
+      })
+    );
+}, 800);
+'''
+with (root / "logs.js").open("a", encoding="utf-8") as handle:
+    handle.write("\n" + logs_acceptance + "\n")
+
 acceptance = r'''
 const __ACCEPTANCE_REPORT = "http://127.0.0.1:8765/report";
 let __acceptanceStage = "startup";
@@ -466,12 +553,19 @@ let __toolsAcceptanceResolve;
 const __toolsAcceptancePromise = new Promise(resolve => {
   __toolsAcceptanceResolve = resolve;
 });
+let __logsAcceptanceResolve;
+const __logsAcceptancePromise = new Promise(resolve => {
+  __logsAcceptanceResolve = resolve;
+});
 browser.runtime.onMessage.addListener(message => {
   if (message?.kind === "thunderbird-caldav-workspace-acceptance") {
     __workspaceAcceptanceResolve(message.result);
   }
   if (message?.kind === "thunderbird-caldav-tools-acceptance") {
     __toolsAcceptanceResolve(message.result);
+  }
+  if (message?.kind === "thunderbird-caldav-logs-acceptance") {
+    __logsAcceptanceResolve(message.result);
   }
 });
 
@@ -710,6 +804,28 @@ async function __runRealAcceptance() {
   );
   __acceptanceAssert(events.length === 0, "Acceptance left VEVENT test data behind");
 
+  __acceptanceStage = "logs-clear-ui";
+  const logsTab = await browser.tabs.create({
+    url: browser.runtime.getURL("logs.html"),
+  });
+  __acceptanceAssert(Boolean(logsTab?.id), "Logs tab could not be opened");
+  const logsResult = await Promise.race([
+    __logsAcceptancePromise,
+    __acceptanceDelay(30000).then(() => {
+      throw new Error("Timed out waiting for Logs clear acceptance");
+    }),
+  ]);
+  __acceptanceAssert(
+    logsResult?.ok,
+    "Logs clear UI acceptance failed: " + (logsResult?.error || "unknown")
+  );
+  __acceptanceAssert(logsResult.filteredEmptyDistinct, "Filtered empty-state contract failed");
+  __acceptanceAssert(logsResult.confirmationExclusive, "Clear confirmation overlapped log empty state");
+  __acceptanceAssert(logsResult.cancelRestoresList, "Clear cancel did not restore log list");
+  __acceptanceAssert(logsResult.clearPersistent, "Log clear was not persistent");
+  __acceptanceAssert(logsResult.emptyStateCorrect, "Cleared log empty state is incorrect");
+  await browser.tabs.remove(logsTab.id);
+
   return {
     ok: true,
     thunderbirdCalDAV: true,
@@ -727,6 +843,7 @@ async function __runRealAcceptance() {
     simpleUi: true,
     taskFixRealUi: true,
     diagnostics: true,
+    logsClearUi: true,
     createdEventId: event.id,
   };
 }

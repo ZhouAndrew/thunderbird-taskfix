@@ -50,6 +50,7 @@ async function saveWordPressFromForm() {
     applicationPassword: $("wp-password").value,
     wordpressPath: $("wp-path").value,
     wpCliCommand: $("wp-cli").value,
+    legacyHelperDir: $("wp-helper-dir").value,
   });
 }
 
@@ -150,6 +151,7 @@ async function load() {
   $("wp-password").value = wp.applicationPassword || "";
   $("wp-path").value = wp.wordpressPath || "/var/www/html/wordpress";
   $("wp-cli").value = wp.wpCliCommand || "wp";
+  $("wp-helper-dir").value = wp.legacyHelperDir || "~/bin";
 
   $("undo-settings").hidden = !(await AssistantStorage.getSettingsUndo());
 

@@ -139,6 +139,16 @@ with zipfile.ZipFile(path) as z:
     assert "details: {restored}" not in tools
     assert "Calendar 完整读写" in tools_html
     assert "WordPress 完整读写" in tools_html
+    assert "WordPress 连接方式" in tools_html
+    assert "Application Password / REST" in tools_html
+    assert "WP-CLI（兼容旧脚本）" in tools_html
+    assert 'id="wp-path"' in tools_html
+    assert 'id="wp-cli"' in tools_html
+    assert "httpRequest" in direct
+    assert "runWpCli" in direct
+    assert "Subprocess.sys.mjs" in direct
+    assert "Thunderbird privileged HTTP bridge" in wordpress
+    assert "WordPress path is not configured for WP-CLI" in wordpress
     assert "No VTODO was created" in connection
     assert "AssistantConnection.fullCalendarWriteTest" in tools
 

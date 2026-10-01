@@ -289,6 +289,21 @@
         "returns": {
           "type": "any"
         }
+      },
+      {
+        "name": "runWpCli",
+        "type": "function",
+        "async": true,
+        "description": "Run the local wp executable for the configured WordPress installation. Supports one temporary uploaded file for media import.",
+        "parameters": [
+          {
+            "name": "details",
+            "type": "any"
+          }
+        ],
+        "returns": {
+          "type": "any"
+        }
       }
     ],
     "events": [

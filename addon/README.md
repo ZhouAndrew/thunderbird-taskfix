@@ -60,6 +60,14 @@ A stable GitHub Release is published **once each time a version has passed autom
 - Merging an accepted stable version to `main` triggers the stable release workflow.
 - No weekly, biweekly, or monthly release cadence is required.
 
+## Testing convention
+
+The project-wide real-GUI testing note is in [`TESTING.md`](../TESTING.md).
+
+The TaskFix 0.3.3 reference acceptance was completed on official Thunderbird 153.1.0esr and covers delayed Tasks-panel activation, real task-tree multi-selection, one two-item Calendar batch transaction, direct Undo/Redo, Ctrl+Z / Ctrl+Shift+Z, and Edit-menu Undo/Redo.
+
+This is now a release convention: every stable TaskFix release must pass the real Thunderbird GUI acceptance path in addition to ordinary automated tests and package checks. A failed or incomplete real-GUI run keeps the build at RC / prerelease status.
+
 ## Acceptance checklist
 
 1. Install the XPI into an unmodified official Thunderbird 153.x profile.

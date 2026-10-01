@@ -365,6 +365,86 @@ setTimeout(() => {
 with (root / "workspace.js").open("a", encoding="utf-8") as handle:
     handle.write("\n" + workspace_acceptance + "\n")
 
+tools_acceptance = r'''
+async function __toolsWaitFor(predicate, label, timeoutMs = 15000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (await predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error("Tools timeout: " + label);
+}
+
+function __toolsAssert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+async function __runToolsAcceptance() {
+  await __toolsWaitFor(
+    () => [...$("task-calendar").options].some(option => option.value === "acceptance-calendar"),
+    "Task Calendar options"
+  );
+
+  __toolsAssert(location.hash === "#task-defaults", "Assistant did not navigate to the Task defaults section");
+  __toolsAssert(Boolean(document.getElementById("task-defaults")), "Task defaults section is missing");
+  __toolsAssert($("task-view").value === "incomplete", "Default Task view is not Incomplete");
+  __toolsAssert(
+    [...$("task-calendar").options].some(option => option.value === "acceptance-calendar"),
+    "Thunderbird Calendar list was not reused in Settings"
+  );
+
+  const before = await AssistantStorage.getSettings();
+  $("task-view").value = "completed";
+  $("task-calendar").value = "acceptance-calendar";
+  $("save-settings").click();
+
+  await __toolsWaitFor(async () => {
+    const settings = await AssistantStorage.getSettings();
+    return settings.taskView === "completed" &&
+      settings.taskCalendarId === "acceptance-calendar";
+  }, "save Task defaults");
+
+  __toolsAssert(!$("undo-settings").hidden, "Undo was not offered after changing defaults");
+  $("undo-settings").click();
+
+  await __toolsWaitFor(async () => {
+    const settings = await AssistantStorage.getSettings();
+    return JSON.stringify(settings) === JSON.stringify(before);
+  }, "undo Task defaults");
+
+  return {
+    ok: true,
+    navigatedToSettings: true,
+    thunderbirdCalendarsReused: true,
+    settingsSaved: true,
+    settingsUndone: true,
+  };
+}
+
+setTimeout(() => {
+  __runToolsAcceptance()
+    .then(result =>
+      browser.runtime.sendMessage({
+        kind: "thunderbird-caldav-tools-acceptance",
+        result,
+      })
+    )
+    .catch(error =>
+      browser.runtime.sendMessage({
+        kind: "thunderbird-caldav-tools-acceptance",
+        result: {
+          ok: false,
+          error:
+            (error?.message || String(error)) +
+            (error?.stack ? "\n" + error.stack : ""),
+        },
+      })
+    );
+}, 800);
+'''
+with (root / "tools.js").open("a", encoding="utf-8") as handle:
+    handle.write("\n" + tools_acceptance + "\n")
+
 acceptance = r'''
 const __ACCEPTANCE_REPORT = "http://127.0.0.1:8765/report";
 let __acceptanceStage = "startup";
@@ -372,9 +452,16 @@ let __workspaceAcceptanceResolve;
 const __workspaceAcceptancePromise = new Promise(resolve => {
   __workspaceAcceptanceResolve = resolve;
 });
+let __toolsAcceptanceResolve;
+const __toolsAcceptancePromise = new Promise(resolve => {
+  __toolsAcceptanceResolve = resolve;
+});
 browser.runtime.onMessage.addListener(message => {
   if (message?.kind === "thunderbird-caldav-workspace-acceptance") {
     __workspaceAcceptanceResolve(message.result);
+  }
+  if (message?.kind === "thunderbird-caldav-tools-acceptance") {
+    __toolsAcceptanceResolve(message.result);
   }
 });
 
@@ -445,6 +532,27 @@ async function __runRealAcceptance() {
   __acceptanceAssert(workspaceResult.defaultIncomplete, "Default Incomplete view did not pass");
   __acceptanceAssert(workspaceResult.settingsUndo, "Default settings Undo did not pass");
   await browser.tabs.remove(workspaceTab.id);
+
+  __acceptanceStage = "tools-guided-settings";
+  const toolsTab = await browser.tabs.create({
+    url: browser.runtime.getURL("tools.html#task-defaults"),
+  });
+  __acceptanceAssert(Boolean(toolsTab?.id), "Tools tab could not be opened");
+  const toolsResult = await Promise.race([
+    __toolsAcceptancePromise,
+    __acceptanceDelay(30000).then(() => {
+      throw new Error("Timed out waiting for Tools guided-settings acceptance");
+    }),
+  ]);
+  __acceptanceAssert(
+    toolsResult?.ok,
+    "Tools guided-settings acceptance failed: " + (toolsResult?.error || "unknown")
+  );
+  __acceptanceAssert(toolsResult.navigatedToSettings, "Assistant did not land on Task defaults");
+  __acceptanceAssert(toolsResult.thunderbirdCalendarsReused, "Settings did not reuse Thunderbird Calendars");
+  __acceptanceAssert(toolsResult.settingsSaved, "Task defaults did not save");
+  __acceptanceAssert(toolsResult.settingsUndone, "Task defaults could not be undone");
+  await browser.tabs.remove(toolsTab.id);
 
   __acceptanceStage = "taskfix-real-ui";
   const taskFix = await browser.AcceptanceTaskFix.openTasksAndCheck();

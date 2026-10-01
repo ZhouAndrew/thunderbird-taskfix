@@ -299,7 +299,7 @@ async function __runRealWordPressAcceptance() {
   await AssistantWordPress.saveConfig({
     transport: "wp-cli",
     wordpressPath: "/var/www/html",
-    wpCliExecutable: __WP_CLI_EXECUTABLE__,
+    wpCliCommand: __WP_CLI_EXECUTABLE__,
   });
 
   const cliQuick = await AssistantWordPress.quickTest();

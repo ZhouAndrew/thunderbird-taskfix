@@ -1,8 +1,8 @@
 # CalDAV Assistant Experimental
 
-Current build: **0.3.7** for official Thunderbird **153.0.2 through 153.1.x**.
+Current build: **0.3.8** for official Thunderbird **153.0.2 through 153.1.x**.
 
-0.3.7 keeps the 0.3.6 simple UI and adds guided defaults without adding another framework. The add-on remains a direct Thunderbird Calendar/Tasks provider client; the normal user experience is a small task workflow.
+0.3.8 keeps the 0.3.7 guided UI and adds automatic WP-CLI fallback when REST fails at the network layer. The add-on remains a direct Thunderbird Calendar/Tasks provider client; the normal user experience is a small task workflow.
 
 ## Work page
 

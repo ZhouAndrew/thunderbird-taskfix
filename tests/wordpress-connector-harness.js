@@ -162,15 +162,18 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
 
   const file = new Blob(["attachment"], {type: "text/plain"});
   Object.defineProperty(file, "name", {value: "note.txt"});
+  const image = new Blob(["png"], {type: "image/png"});
+  Object.defineProperty(image, "name", {value: "photo.png"});
   const firstLog = await AssistantWordPress.createLog({
     content: "Completed work.",
-    files: [file],
+    files: [file, image],
   });
   assert(firstLog.success, "WordPress first log append failed");
   assert(firstLog.post?.id, "WordPress log receipt has no Post ID");
   assert(firstLog.post.createdToday === true, "first log did not create today's daily post");
   assert(firstLog.media?.[0]?.id, "WordPress log receipt has no Media ID");
-  assert(firstLog.media[0].parent === firstLog.post.id, "media parent Post ID was not reported");
+  assert(firstLog.media?.[1]?.id, "WordPress image receipt has no Media ID");
+  assert(firstLog.media.every(item => item.parent === firstLog.post.id), "media parent Post ID was not reported");
 
   const dailyPostId = firstLog.post.id;
   const secondLog = await AssistantWordPress.createLog({
@@ -181,10 +184,20 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
   assert(secondLog.post?.id === dailyPostId, "second log created a different WordPress post");
   assert(secondLog.post.createdToday === false, "second log did not reuse today's daily post");
   assert(posts.size === 1, "one-by-one logging created more than one daily WordPress post");
-  const dailyContent = posts.get(dailyPostId)?.content?.raw || "";
+  const dailyPost = posts.get(dailyPostId);
+  const dailyContent = dailyPost?.content?.raw || "";
+  const title = dailyPost?.title?.raw || dailyPost?.title?.rendered || "";
+  assert(
+    /^[A-Za-z]+ \d{1,2}  [A-Za-z]+  \d{4}$/.test(title),
+    "daily WordPress post title no longer matches the existing helper format"
+  );
   assert(dailyContent.includes("Completed work."), "first log entry was lost");
   assert(dailyContent.includes("Second work entry."), "second log entry was not appended");
+  assert(/<p>\d{2}:\d{2} Completed work\.<\/p>/.test(dailyContent), "log entry has no HH:MM prefix");
+  assert(dailyContent.includes("<!-- wp:file"), "generic attachment is not a Gutenberg file block");
   assert(dailyContent.includes("note.txt"), "attachment link was not appended to the daily log");
+  assert(dailyContent.includes("<!-- wp:image"), "image attachment is not a Gutenberg image block");
+  assert(dailyContent.includes("photo.png"), "image attachment alt text was not preserved");
 
   const audits = await AssistantStorage.listAudit();
   assert(audits.some(row => row.scope === "wordpress"), "WordPress log was not audited");

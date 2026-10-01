@@ -273,6 +273,44 @@ async function resumeReadbackRollback() {
   assert(runtime.state === "paused" && !runtime.currentWorkEvent, "failed Resume did not restore paused runtime");
 }
 
+async function putAsideLifecycle() {
+  resetAll();
+  let receipt = await AssistantExecutor.start(clone(task), "work");
+  assert(receipt.success, "Put-aside setup Start failed");
+  let runtime = await AssistantStorage.getRuntime();
+  const workId = runtime.currentWorkEvent.id;
+
+  receipt = await AssistantExecutor.putAside(clone(task));
+  assert(receipt.success, "Put-aside failed");
+  assert(task.status === "IN-PROCESS" && task.paused === true, "Put-aside did not leave Task paused");
+  assert(events.get(workId)?.end && !events.get(workId)?.workOpen, "Put-aside did not close Work VEVENT");
+  runtime = await AssistantStorage.getRuntime();
+  assert(runtime.state === "idle" && !runtime.currentTask, "Put-aside did not release the current Task");
+
+  receipt = await AssistantExecutor.start(clone(task), "work");
+  assert(receipt.success, "Task could not be started again after put-aside");
+  assert(task.status === "IN-PROCESS" && task.paused === false, "Restart after put-aside did not clear paused state");
+  runtime = await AssistantStorage.getRuntime();
+  assert(runtime.state === "working" && runtime.currentTask?.id === task.id, "Restart after put-aside did not become current");
+
+  receipt = await AssistantExecutor.cancel(clone(task));
+  assert(receipt.success, "Put-aside cleanup Cancel failed");
+}
+
+async function putAsidePausedLifecycle() {
+  resetAll();
+  let receipt = await AssistantExecutor.start(clone(task), "work");
+  assert(receipt.success, "Paused put-aside setup Start failed");
+  receipt = await AssistantExecutor.pause(clone(task));
+  assert(receipt.success, "Paused put-aside setup Pause failed");
+
+  receipt = await AssistantExecutor.putAside(clone(task));
+  assert(receipt.success, "Put-aside from paused state failed");
+  assert(task.status === "IN-PROCESS" && task.paused === true, "Paused put-aside changed Task state");
+  const runtime = await AssistantStorage.getRuntime();
+  assert(runtime.state === "idle" && !runtime.currentTask, "Paused put-aside did not release current Task");
+}
+
 async function cancelLifecycle() {
   resetAll();
   let receipt = await AssistantExecutor.start(clone(task), "work");
@@ -316,6 +354,8 @@ async function completeWriteRollback() {
   await uncertainCreateRollback();
   await pauseWriteRollback();
   await resumeReadbackRollback();
+  await putAsideLifecycle();
+  await putAsidePausedLifecycle();
   await cancelLifecycle();
   await completeWriteRollback();
   console.log("workflow-harness: PASS");

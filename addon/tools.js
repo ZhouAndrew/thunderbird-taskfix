@@ -174,13 +174,45 @@ $("calendar-full").addEventListener("click", async () => {
   }
   renderResult(await AssistantConnection.fullCalendarWriteTest(calendarId));
 });
-$("wp-quick").addEventListener("click", async () => {
-  await saveWordPressFromForm();
-  renderResult(await AssistantWordPress.quickTest());
+async function runWordPressConnectionTest(action, label, runner) {
+  try {
+    // permissions.request() must be started while this call stack still comes
+    // directly from the click event. Do not await storage first.
+    const permissionRequest = AssistantWordPress.requestPermissionForBaseUrl(
+      $("wp-url").value
+    );
+    const granted = await permissionRequest;
+    if (!granted) throw new Error("WordPress host permission was not granted.");
+
+    await saveWordPressFromForm();
+    renderResult(await runner());
+  } catch (error) {
+    const message = String(error?.message || error || "Unknown error");
+    const result = await AssistantStorage.persistResult({
+      action,
+      success: false,
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      summary: label + " failed: " + message,
+      steps: [{name: "WordPress permission", success: false, error: message}],
+    }, "connection");
+    renderResult(result);
+  }
+}
+
+$("wp-quick").addEventListener("click", () => {
+  void runWordPressConnectionTest(
+    "connection.wordpress-quick",
+    "WordPress quick test",
+    () => AssistantWordPress.quickTest()
+  );
 });
-$("wp-full").addEventListener("click", async () => {
-  await saveWordPressFromForm();
-  renderResult(await AssistantWordPress.fullWriteTest());
+$("wp-full").addEventListener("click", () => {
+  void runWordPressConnectionTest(
+    "connection.wordpress-full-write",
+    "WordPress full write test",
+    () => AssistantWordPress.fullWriteTest()
+  );
 });
 
 load().catch(async error => {

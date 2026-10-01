@@ -7,15 +7,7 @@
 
   async function finish(result) {
     result.completedAt = new Date().toISOString();
-    await AssistantStorage.saveLastReceipt(result);
-    await AssistantStorage.appendAudit({
-      scope: "connection",
-      action: result.action,
-      success: result.success,
-      summary: result.summary,
-      details: result,
-    });
-    return result;
+    return AssistantStorage.persistResult(result, "connection");
   }
 
   async function quickCalendarTest() {

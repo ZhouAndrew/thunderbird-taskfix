@@ -37,7 +37,7 @@ with zipfile.ZipFile(path) as z:
 
     manifest = json.loads(z.read("manifest.json"))
     assert manifest["name"] == "CalDAV Assistant Experimental"
-    assert manifest["version"] == "0.3.9"
+    assert manifest["version"] == "0.3.10"
     assert manifest["browser_specific_settings"]["gecko"]["id"] == (
         "ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net"
     )
@@ -145,6 +145,11 @@ with zipfile.ZipFile(path) as z:
     assert 'id="wp-path"' in tools_html
     assert 'id="wp-cli"' in tools_html
     assert "httpRequest" in direct
+    assert "curlRequest" in direct
+    assert "insecureTls" in direct
+    assert "isAllowedInsecureLocalHost" in direct
+    assert "allowUntrustedTls" in wordpress
+    assert 'id="wp-allow-untrusted-tls"' in tools_html
     assert "runWpCli" in direct
     assert "Subprocess.sys.mjs" in direct
     assert "Thunderbird privileged HTTP bridge" in wordpress
@@ -191,4 +196,4 @@ with zipfile.ZipFile(path) as z:
     assert "apply.sh" not in names
     assert "patch_omnijar.py" not in names
 
-print("caldav-assistant-experimental-0.3.9-xpi-contract: PASS")
+print("caldav-assistant-experimental-0.3.10-xpi-contract: PASS")

@@ -16,6 +16,19 @@ cleanup() {
   [[ -n "$XVFB_PID" ]] && kill "$XVFB_PID" 2>/dev/null || true
   [[ -n "$REPORT_PID" ]] && kill "$REPORT_PID" 2>/dev/null || true
   [[ -n "$RADICALE_PID" ]] && kill "$RADICALE_PID" 2>/dev/null || true
+
+  if [[ -n "${ACCEPTANCE_ARTIFACT_DIR:-}" ]]; then
+    mkdir -p "$ACCEPTANCE_ARTIFACT_DIR"
+    for candidate in       "$TMP/report.json"       "$TMP/thunderbird.stdout"       "$TMP/thunderbird.stderr"       "$TMP/thunderbird-restart.stdout"       "$TMP/thunderbird-restart.stderr"       "$TMP/radicale.log"       "$TMP/xvfb.log"; do
+      [[ -f "$candidate" ]] && cp "$candidate" "$ACCEPTANCE_ARTIFACT_DIR/" || true
+    done
+    if [[ -n "${PROFILE:-}" ]]; then
+      for candidate in         "$PROFILE/caldav-assistant-experimental.log"         "$PROFILE/caldav-assistant-experimental.log.1"; do
+        [[ -f "$candidate" ]] && cp "$candidate" "$ACCEPTANCE_ARTIFACT_DIR/" || true
+      done
+    fi
+  fi
+
   rm -rf "$TMP"
 }
 trap cleanup EXIT
@@ -381,6 +394,24 @@ async function __runRealAcceptance() {
   __acceptanceAssert(taskFix.statusButton, "TaskFix Status toolbar button is missing");
   __acceptanceAssert(taskFix.contextStatus, "TaskFix Status context menu is missing");
 
+  __acceptanceStage = "diagnostics";
+  await browser.ThunderbirdCalDAV.writeDiagnostic("acceptance", "probe", {
+    password: "must-not-leak",
+    note: "diagnostics-probe-ok",
+  });
+  const diagnosticInfo = await browser.ThunderbirdCalDAV.diagnosticsInfo();
+  const diagnosticRead = await browser.ThunderbirdCalDAV.readDiagnostics(400);
+  __acceptanceAssert(Boolean(diagnosticInfo.path), "Diagnostics path is missing");
+  __acceptanceAssert(
+    diagnosticRead.text.includes('"component":"acceptance"') &&
+      diagnosticRead.text.includes('"event":"probe"'),
+    "Persistent diagnostics probe was not readable"
+  );
+  __acceptanceAssert(
+    !diagnosticRead.text.includes("must-not-leak"),
+    "Diagnostics did not redact a password field"
+  );
+
   __acceptanceStage = "wait-calendar-seed";
   const calendar = await __waitForAcceptanceCalendar();
   __acceptanceAssert(calendar.type === "caldav", "Configured calendar is not CalDAV");
@@ -515,6 +546,7 @@ async function __runRealAcceptance() {
     workflowUi: true,
     persistentReceipt: true,
     taskFixRealUi: true,
+    diagnostics: true,
     createdEventId: event.id,
   };
 }
@@ -762,6 +794,7 @@ for key in (
     "workflowUi",
     "persistentReceipt",
     "taskFixRealUi",
+    "diagnostics",
 ):
     assert data.get(key) is True, (key, data)
 assert data["calendar"]["type"] == "caldav", data
@@ -776,6 +809,20 @@ then
   cat "$TMP/radicale.log" || true
   exit 1
 fi
+
+echo "== Verify persistent CalDAV Assistant diagnostics =="
+ASSISTANT_LOG="$PROFILE/caldav-assistant-experimental.log"
+test -s "$ASSISTANT_LOG"
+grep -q '"component":"acceptance"' "$ASSISTANT_LOG"
+grep -q '"event":"probe"' "$ASSISTANT_LOG"
+grep -q '"event":"task.update.success"' "$ASSISTANT_LOG"
+grep -q '"event":"event.create.success"' "$ASSISTANT_LOG"
+if grep -q 'must-not-leak\|test-password' "$ASSISTANT_LOG"; then
+  echo "Sensitive value leaked into diagnostics log"
+  cat "$ASSISTANT_LOG"
+  exit 1
+fi
+echo "persistent-diagnostics: PASS ($ASSISTANT_LOG)"
 
 echo "== Verify server state after Thunderbird CRUD =="
 curl -fsS -u acceptance:test-password -X PROPFIND -H 'Depth: 1' \
@@ -853,6 +900,7 @@ for key in (
     "workflowUi",
     "persistentReceipt",
     "taskFixRealUi",
+    "diagnostics",
 ):
     assert data.get(key) is True, (key, data)
 assert data["calendar"]["type"] == "caldav", data
@@ -876,4 +924,18 @@ assert hrefs == ["/acceptance/test/seed-task.ics"], hrefs
 print("radicale-clean-after-restart: PASS")
 PY
 
-echo "Real Thunderbird $TB_VERSION ($TB_TIMEZONE) + real Radicale + restart acceptance: PASS"
+echo "== Verify diagnostics survived Thunderbird restart =="
+test -s "$ASSISTANT_LOG"
+python3 - "$ASSISTANT_LOG" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+lines = [line for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+events = [json.loads(line) for line in lines]
+assert sum(1 for row in events if row.get("component") == "acceptance" and row.get("event") == "probe") >= 2
+assert any(row.get("component") == "background" and row.get("event") == "startup.success" for row in events)
+print("persistent-diagnostics-after-restart: PASS")
+PY
+
+echo "Real Thunderbird $TB_VERSION ($TB_TIMEZONE) + real Radicale + restart + diagnostics acceptance: PASS"

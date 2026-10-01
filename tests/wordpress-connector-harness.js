@@ -49,6 +49,15 @@ global.fetch = async (url, options = {}) => {
     return jsonResponse({id: 7, name: "Acceptance User", slug: "acceptance"});
   }
 
+  if (path === "/posts" && method === "GET") {
+    const search = parsed.searchParams.get("search") || "";
+    return jsonResponse(
+      [...posts.values()].filter(post =>
+        !search || String(post.title?.raw || post.title?.rendered || "").includes(search)
+      )
+    );
+  }
+
   if (path === "/posts" && method === "POST") {
     const body = JSON.parse(options.body);
     const id = ++nextPost;
@@ -56,7 +65,7 @@ global.fetch = async (url, options = {}) => {
       id,
       status: body.status || "draft",
       link: `http://example.test/?p=${id}`,
-      title: {rendered: body.title || ""},
+      title: {raw: body.title || "", rendered: body.title || ""},
       content: {raw: body.content || "", rendered: body.content || ""},
     };
     posts.set(id, post);
@@ -72,7 +81,7 @@ global.fetch = async (url, options = {}) => {
     if (method === "POST") {
       const body = JSON.parse(options.body);
       if ("content" in body) post.content = {raw: body.content, rendered: body.content};
-      if ("title" in body) post.title = {rendered: body.title};
+      if ("title" in body) post.title = {raw: body.title, rendered: body.title};
       if ("status" in body) post.status = body.status;
       return jsonResponse(post);
     }
@@ -153,16 +162,29 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
 
   const file = new Blob(["attachment"], {type: "text/plain"});
   Object.defineProperty(file, "name", {value: "note.txt"});
-  const log = await AssistantWordPress.createLog({
-    title: "Production log",
+  const firstLog = await AssistantWordPress.createLog({
     content: "Completed work.",
-    status: "draft",
     files: [file],
   });
-  assert(log.success, "WordPress log create failed");
-  assert(log.post?.id, "WordPress log receipt has no Post ID");
-  assert(log.media?.[0]?.id, "WordPress log receipt has no Media ID");
-  assert(log.media[0].parent === log.post.id, "media parent Post ID was not reported");
+  assert(firstLog.success, "WordPress first log append failed");
+  assert(firstLog.post?.id, "WordPress log receipt has no Post ID");
+  assert(firstLog.post.createdToday === true, "first log did not create today's daily post");
+  assert(firstLog.media?.[0]?.id, "WordPress log receipt has no Media ID");
+  assert(firstLog.media[0].parent === firstLog.post.id, "media parent Post ID was not reported");
+
+  const dailyPostId = firstLog.post.id;
+  const secondLog = await AssistantWordPress.createLog({
+    content: "Second work entry.",
+    files: [],
+  });
+  assert(secondLog.success, "WordPress second log append failed");
+  assert(secondLog.post?.id === dailyPostId, "second log created a different WordPress post");
+  assert(secondLog.post.createdToday === false, "second log did not reuse today's daily post");
+  assert(posts.size === 1, "one-by-one logging created more than one daily WordPress post");
+  const dailyContent = posts.get(dailyPostId)?.content?.raw || "";
+  assert(dailyContent.includes("Completed work."), "first log entry was lost");
+  assert(dailyContent.includes("Second work entry."), "second log entry was not appended");
+  assert(dailyContent.includes("note.txt"), "attachment link was not appended to the daily log");
 
   const audits = await AssistantStorage.listAudit();
   assert(audits.some(row => row.scope === "wordpress"), "WordPress log was not audited");

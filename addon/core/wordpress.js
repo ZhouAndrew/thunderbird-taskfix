@@ -205,6 +205,28 @@
     return String(result?.stdout || "").trim();
   }
 
+
+  async function runLegacyHelper(config, helperName) {
+    const bridge = browser.ThunderbirdCalDAV?.runWordPressHelper;
+    if (typeof bridge !== "function" || !config.legacyHelperDir) {
+      return {available: false, exitCode: null, stdout: "", stderr: ""};
+    }
+    return bridge({
+      helperDir: config.legacyHelperDir,
+      helperName,
+    });
+  }
+
+  function helperPostId(text, {strictLine = false} = {}) {
+    const source = String(text || "");
+    if (strictLine) {
+      const line = source.split(/\r?\n/).map(x => x.trim()).find(x => /^\d+$/.test(x));
+      return line ? Number(line) : 0;
+    }
+    const matches = [...source.matchAll(/(?:^|\D)(\d+)(?=\D|$)/g)];
+    return matches.length ? Number(matches[matches.length - 1][1]) : 0;
+  }
+
   function wpCliPostView(record) {
     const id = Number(record?.ID ?? record?.id ?? 0);
     const title = String(record?.post_title ?? record?.title ?? "");
@@ -599,6 +621,26 @@
   }
 
   async function findDailyLogPost(date = new Date()) {
+    const config = await getConfig();
+
+    if (selectedTransport(config) === "wp-cli") {
+      const helper = await runLegacyHelper(config, "find-today-post.sh");
+      if (helper.available) {
+        if (Number(helper.exitCode ?? -1) !== 0) {
+          throw new Error(
+            "find-today-post.sh failed: " +
+            String(helper.stderr || helper.stdout || "unknown error").trim()
+          );
+        }
+        const helperId = helperPostId(helper.stdout, {strictLine: true});
+        if (helperId) {
+          return request(`/posts/${helperId}?context=edit`);
+        }
+        // The legacy helper deliberately exits 0 when today's post is missing.
+        return null;
+      }
+    }
+
     const posts = await request(
       "/posts?context=edit&per_page=100&search=" +
       encodeURIComponent(dailyLogSearchText(date))
@@ -610,7 +652,34 @@
   async function ensureDailyLogPost(date = new Date()) {
     const title = dailyLogTitle(date);
     let post = await findDailyLogPost(date);
-    if (post) return {post, title, created: false};
+    if (post) return {post, title: rawTitle(post) || title, created: false};
+
+    const config = await getConfig();
+    if (selectedTransport(config) === "wp-cli") {
+      const helper = await runLegacyHelper(config, "create-post.sh");
+      if (helper.available) {
+        if (Number(helper.exitCode ?? -1) !== 0) {
+          throw new Error(
+            "create-post.sh failed: " +
+            String(helper.stderr || helper.stdout || "unknown error").trim()
+          );
+        }
+        const helperId = helperPostId(helper.stdout);
+        if (!helperId) {
+          throw new Error("create-post.sh did not report a WordPress post id.");
+        }
+        const read = await request(`/posts/${helperId}?context=edit`);
+        if (read?.id !== helperId || !matchesDailyLogTitle(rawTitle(read), date)) {
+          throw new Error("Legacy create-post.sh read-back mismatch.");
+        }
+        return {
+          post: read,
+          title: rawTitle(read) || title,
+          created: true,
+          legacyHelper: true,
+        };
+      }
+    }
 
     post = await request("/posts", {
       method: "POST",
@@ -625,7 +694,7 @@
     if (read?.id !== post.id || !matchesDailyLogTitle(rawTitle(read), date)) {
       throw new Error("WordPress daily log create read-back mismatch.");
     }
-    return {post: read, title, created: true};
+    return {post: read, title: rawTitle(read) || title, created: true};
   }
 
   function currentTimeText(date = new Date()) {

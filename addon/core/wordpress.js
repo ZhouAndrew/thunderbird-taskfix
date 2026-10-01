@@ -43,12 +43,6 @@
     return parsed.origin + "/*";
   }
 
-  function requestPermissionForBaseUrl(baseUrl) {
-    // IMPORTANT: callers must invoke this directly from a user-input handler,
-    // before their first await. Thunderbird rejects delayed permissions.request().
-    return browser.permissions.request({origins: [permissionOrigin(baseUrl)]});
-  }
-
   function basicAuth(username, password) {
     const bytes = new TextEncoder().encode(`${username}:${password}`);
     let binary = "";
@@ -494,7 +488,6 @@
   globalThis.AssistantWordPress = Object.freeze({
     getConfig,
     saveConfig,
-    requestPermissionForBaseUrl,
     ensurePermission,
     quickTest,
     fullWriteTest,

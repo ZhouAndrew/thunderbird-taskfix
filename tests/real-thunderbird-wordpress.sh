@@ -279,9 +279,18 @@ done
 [[ -f "$TMP/quick-ready" ]] || { echo "Tools did not become ready"; exit 1; }
 
 echo "== Native keypress: start permissions.request from a real user event =="
-WIN="$(xdotool search --onlyvisible --pid "$TB_PID" | head -n1)"
+WIN="$(xdotool search --onlyvisible --name 'CalDAV Assistant.*工具' | tail -n1 || true)"
+if [[ -z "$WIN" ]]; then
+  WIN="$(xdotool search --onlyvisible --pid "$TB_PID" | tail -n1)"
+fi
 test -n "$WIN"
-xdotool key Return
+echo "WordPress tools popup window: $WIN"
+xdotool getwindowgeometry "$WIN" || true
+
+# The acceptance copy fixes wp-quick at left:24px/top:24px in a popup window.
+# This is a real X mouse event, so Thunderbird's user-activation bookkeeping
+# sees the same kind of click as a person pressing the button.
+xdotool mousemove --window "$WIN" 80 42 click 1
 sleep 1
 # Approve Thunderbird's optional host-permission doorhanger.
 xdotool key Return
@@ -297,8 +306,9 @@ if [[ -s "$TMP/report.json" && ! -f "$TMP/full-ready" ]]; then
 fi
 [[ -f "$TMP/full-ready" ]] || { echo "Quick WordPress acceptance did not complete"; exit 1; }
 
-echo "== Native keypress: run real full WordPress write/read/update/media/delete =="
-xdotool key Return
+echo "== Native mouse click: run real full WordPress write/read/update/media/delete =="
+# full button is also moved to the same fixed acceptance position after quick succeeds.
+xdotool mousemove --window "$WIN" 80 42 click 1
 
 for _ in $(seq 1 600); do
   [[ -s "$TMP/report.json" ]] && break

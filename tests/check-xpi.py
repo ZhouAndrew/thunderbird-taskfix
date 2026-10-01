@@ -47,8 +47,9 @@ with zipfile.ZipFile(path) as z:
     assert "ThunderbirdCalDAV" in manifest["experiment_apis"]
     assert "storage" in manifest.get("permissions", [])
     assert "nativeMessaging" not in manifest.get("permissions", [])
-    assert "http://*/*" in manifest.get("optional_permissions", [])
-    assert "https://*/*" in manifest.get("optional_permissions", [])
+    assert "http://*/*" in manifest.get("permissions", [])
+    assert "https://*/*" in manifest.get("permissions", [])
+    assert "optional_permissions" not in manifest
 
     background = z.read("background.js").decode()
     direct = z.read("api/ThunderbirdCalDAV/implementation.js").decode()

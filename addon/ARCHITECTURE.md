@@ -91,7 +91,9 @@ Normal Record flow:
 
 today's exact daily title -> find published post -> create it only if absent -> upload optional media to that post -> append one Gutenberg log entry -> read back and verify marker
 
-For example, the daily post title can be `October 1 Thursday 2026`. Multiple Record submissions on the same day reuse the same Post ID. Attachments are parented to that daily post and linked from the appended entry.
+New daily posts use the existing helper title shape, for example `October 1  Thursday  2026`. Lookup remains compatible with older helper-created titles: full or abbreviated month, the day as a numeric token, weekday and year are matched without depending on spacing or token order.
+
+Each text entry is appended as a new Gutenberg paragraph prefixed with local `HH:MM`. Attachments are parented to the same daily post and appended as native Gutenberg blocks: image, video, audio or file/PDF according to MIME type. Multiple Record submissions on the same day reuse the same Post ID.
 
 The visible result reports the daily Post ID / Media ID values; the full request/result record stays in Logs. Completing a Task still does not implicitly create a WordPress post.
 

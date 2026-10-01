@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - "release/taskfix-*"
+    tags:
+      - "v*"
     paths:
       - "addon/**"
       - "packaging/build-xpi.sh"

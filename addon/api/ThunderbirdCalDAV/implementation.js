@@ -405,6 +405,193 @@ function tempFileFromBase64(filename, base64) {
   return file;
 }
 
+function createTempFile(filename) {
+  const directoryService = Cc["@mozilla.org/file/directory_service;1"]
+    .getService(Ci.nsIProperties);
+  const file = directoryService.get("TmpD", Ci.nsIFile);
+  const safe = String(filename || "caldav-assistant.tmp")
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .slice(0, 120) || "caldav-assistant.tmp";
+  file.append(safe);
+  file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o600);
+  return file;
+}
+
+function writeTempText(filename, text) {
+  const file = createTempFile(filename);
+  const stream = Cc["@mozilla.org/network/file-output-stream;1"]
+    .createInstance(Ci.nsIFileOutputStream);
+  stream.init(file, 0x02 | 0x08 | 0x20, 0o600, 0);
+  const converter = Cc["@mozilla.org/intl/converter-output-stream;1"]
+    .createInstance(Ci.nsIConverterOutputStream);
+  converter.init(stream, "UTF-8");
+  converter.writeString(String(text || ""));
+  converter.close();
+  return file;
+}
+
+function curlQuote(value) {
+  const text = String(value ?? "");
+  if (/[
+]/.test(text)) {
+    throw new ExtensionError("curl config values must not contain newlines");
+  }
+  return '"' + text.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+}
+
+function isAllowedInsecureLocalHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  if (host === "localhost" || host === "::1" || host.endsWith(".local")) return true;
+
+  const parts = host.split(".");
+  if (parts.length !== 4 || parts.some(part => !/^\d+$/.test(part))) return false;
+  const nums = parts.map(Number);
+  if (nums.some(value => value < 0 || value > 255)) return false;
+  return (
+    nums[0] === 10 ||
+    nums[0] === 127 ||
+    (nums[0] === 169 && nums[1] === 254) ||
+    (nums[0] === 172 && nums[1] >= 16 && nums[1] <= 31) ||
+    (nums[0] === 192 && nums[1] === 168)
+  );
+}
+
+async function curlRequestApi(details = {}) {
+  const url = String(details.url || "").trim();
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (_error) {
+    throw new ExtensionError("curl request URL is invalid");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new ExtensionError("Insecure TLS mode only accepts https:// URLs");
+  }
+  if (!details.insecureTls) {
+    throw new ExtensionError("curl REST bridge requires explicit insecureTls=true");
+  }
+  if (!isAllowedInsecureLocalHost(parsed.hostname)) {
+    throw new ExtensionError(
+      "Insecure TLS mode is restricted to .local, localhost, loopback, and private LAN IPv4 hosts"
+    );
+  }
+
+  const method = String(details.method || "GET").toUpperCase();
+  if (!/^(GET|POST|PUT|PATCH|DELETE|HEAD)$/.test(method)) {
+    throw new ExtensionError("Unsupported curl HTTP method: " + method);
+  }
+
+  let requestBody = null;
+  let responseFile = null;
+  let configFile = null;
+  const started = Date.now();
+
+  try {
+    if (details.bodyBase64) {
+      requestBody = tempFileFromBase64("caldav-assistant-rest-body.bin", details.bodyBase64);
+    } else if (details.bodyText !== undefined && details.bodyText !== null) {
+      requestBody = writeTempText("caldav-assistant-rest-body.txt", details.bodyText);
+    }
+    responseFile = createTempFile("caldav-assistant-rest-response.txt");
+
+    const configLines = [
+      "silent",
+      "show-error",
+      "location",
+      "max-redirs = 3",
+      "connect-timeout = 10",
+      "max-time = 60",
+      "insecure",
+      "request = " + curlQuote(method),
+      "url = " + curlQuote(url),
+      "output = " + curlQuote(responseFile.path),
+      'write-out = "%{http_code}"',
+    ];
+
+    for (const [name, value] of Object.entries(details.headers || {})) {
+      const headerName = String(name);
+      const headerValue = String(value);
+      if (/[
+]/.test(headerName) || /[
+]/.test(headerValue)) {
+        throw new ExtensionError("HTTP headers must not contain newlines");
+      }
+      configLines.push("header = " + curlQuote(headerName + ": " + headerValue));
+    }
+
+    if (requestBody) {
+      configLines.push("data-binary = " + curlQuote("@" + requestBody.path));
+    }
+
+    configFile = writeTempText(
+      "caldav-assistant-curl.conf",
+      configLines.join("\n") + "\n"
+    );
+
+    const command = await Subprocess.pathSearch("curl");
+    appendDiagnosticLog("curl-http", "request.start", {
+      url,
+      method,
+      insecureTls: true,
+    });
+
+    const proc = await Subprocess.call({
+      command,
+      arguments: ["--config", configFile.path],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    proc.stdin.close();
+    const [stdout, stderr, status] = await Promise.all([
+      readPipeText(proc.stdout),
+      readPipeText(proc.stderr),
+      proc.wait(),
+    ]);
+    const exitCode = Number(status?.exitCode ?? -1);
+    if (exitCode !== 0) {
+      throw new Error(String(stderr || stdout || "curl failed").trim());
+    }
+
+    const httpStatus = Number(String(stdout || "").trim());
+    const text = readFileText(responseFile);
+    const result = {
+      ok: httpStatus >= 200 && httpStatus < 300,
+      status: httpStatus,
+      statusText: "",
+      url,
+      text,
+    };
+
+    appendDiagnosticLog("curl-http", "request.success", {
+      url,
+      method,
+      insecureTls: true,
+      status: httpStatus,
+      durationMs: Date.now() - started,
+    });
+    return result;
+  } catch (error) {
+    appendDiagnosticLog("curl-http", "request.error", {
+      url,
+      method,
+      insecureTls: true,
+      durationMs: Date.now() - started,
+      error,
+    });
+    throw new ExtensionError(
+      "Local insecure HTTPS REST request failed: " + String(error?.message || error)
+    );
+  } finally {
+    for (const file of [requestBody, responseFile, configFile]) {
+      if (file?.exists()) {
+        try {
+          file.remove(false);
+        } catch (_error) {}
+      }
+    }
+  }
+}
+
 async function runWpCliApi(details = {}) {
   const executable = String(details.executable || "wp").trim() || "wp";
   const wordpressPath = String(details.wordpressPath || "").trim();
@@ -1152,6 +1339,7 @@ this.ThunderbirdCalDAV = class extends ExtensionAPI {
         clearDiagnostics: clearDiagnosticsApi,
         writeDiagnostic: writeDiagnosticApi,
         httpRequest: httpRequestApi,
+        curlRequest: curlRequestApi,
         runWpCli: runWpCliApi,
         runWordPressHelper: runWordPressHelperApi,
 

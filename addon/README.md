@@ -32,7 +32,7 @@ The Work page does **not** show UID, raw VTODO state, internal Assistant state, 
 
 - **Work** — Task lifecycle.
 - **Today** — today's workflow activity.
-- **Record** — explicit WordPress log + attachments.
+- **Record** — append one log entry (and optional attachments) to today's WordPress log post.
 - **Logs** — complete persistent audit + technical diagnostics.
 - **Tools** — settings and read/write connection tests.
 
@@ -82,6 +82,8 @@ create -> read -> update -> read -> delete -> verify absence
 It never creates a VTODO.
 
 WordPress full test uses a temporary Draft post + test media, verifies them, then deletes them.
+
+Normal Record writes are different: each submission appends one Gutenberg log entry to the single published daily post (for example `October 1 Thursday 2026`). The daily post is created only when that day's post does not yet exist; Record never asks the user for a per-entry post title or post status.
 
 ## Diagnostics
 

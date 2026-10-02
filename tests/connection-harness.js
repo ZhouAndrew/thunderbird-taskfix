@@ -124,7 +124,7 @@ for (const script of ["addon/core/storage.js", "addon/core/connection.js"]) {
     "full test did not verify deletion"
   );
 
-  const auditIndex = writes.indexOf("caldavAssistant.audit");
+  const auditIndex = writes.findIndex(key => key.startsWith("caldavAssistant.audit."));
   const receiptIndex = writes.indexOf("caldavAssistant.lastReceipt");
   assert(
     auditIndex >= 0 && receiptIndex >= 0 && auditIndex < receiptIndex,

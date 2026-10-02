@@ -94,7 +94,7 @@
         "name": "getTask",
         "type": "function",
         "async": true,
-        "description": "Read one VTODO by UID from a Thunderbird calendar provider for write/read-back verification.",
+        "description": "Read one VTODO or one recurring occurrence by UID/RECURRENCE-ID from a Thunderbird calendar provider for write/read-back verification.",
         "parameters": [
           {
             "name": "calendarId",
@@ -103,6 +103,11 @@
           {
             "name": "itemId",
             "type": "string"
+          },
+          {
+            "name": "recurrenceId",
+            "type": "string",
+            "optional": true
           }
         ],
         "returns": {
@@ -151,7 +156,7 @@
         "name": "updateTask",
         "type": "function",
         "async": true,
-        "description": "Modify a VTODO through Thunderbird's calendar provider.",
+        "description": "Modify a VTODO or one recurring occurrence through Thunderbird's calendar provider.",
         "parameters": [
           {
             "name": "calendarId",
@@ -164,6 +169,11 @@
           {
             "name": "changes",
             "type": "any"
+          },
+          {
+            "name": "recurrenceId",
+            "type": "string",
+            "optional": true
           }
         ],
         "returns": {

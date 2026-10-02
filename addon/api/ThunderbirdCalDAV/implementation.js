@@ -30,6 +30,20 @@ const TASK_STATUSES = new Set([
   "CANCELLED",
 ]);
 
+// These are Thunderbird's own task filter identifiers from the built-in
+// task sidebar / calendar-task-tree. Keep the identifiers, not a copied
+// reimplementation of their semantics.
+const NATIVE_TASK_FILTERS = new Set([
+  "throughcurrent",
+  "throughtoday",
+  "throughsevendays",
+  "notstarted",
+  "overdue",
+  "completed",
+  "open",
+  "all",
+]);
+
 const LOG_FILE_PREFIX = "caldav-assistant-experimental-";
 const LOG_FILE_SUFFIX = ".log";
 const LOG_LEGACY_FILE_NAME = "caldav-assistant-experimental.log";
@@ -580,17 +594,23 @@ async function curlRequestApi(details = {}) {
   const url = String(details.url || "").trim();
   let parsed;
   try {
-    parsed = new URL(url);
+    // This code runs in Thunderbird's privileged Experiment parent scope.
+    // Use Gecko's URI service instead of the Web-page WHATWG URL global:
+    // the latter is not guaranteed to exist here and caused valid local URLs
+    // such as https://andrew.local/... to be reported as invalid.
+    parsed = Cc["@mozilla.org/network/io-service;1"]
+      .getService(Ci.nsIIOService)
+      .newURI(url);
   } catch (_error) {
     throw new ExtensionError("curl request URL is invalid");
   }
-  if (parsed.protocol !== "https:") {
+  if (parsed.scheme !== "https") {
     throw new ExtensionError("Insecure TLS mode only accepts https:// URLs");
   }
   if (!details.insecureTls) {
     throw new ExtensionError("curl REST bridge requires explicit insecureTls=true");
   }
-  if (!isAllowedInsecureLocalHost(parsed.hostname)) {
+  if (!isAllowedInsecureLocalHost(parsed.host)) {
     throw new ExtensionError(
       "Insecure TLS mode is restricted to .local, localhost, loopback, and private LAN IPv4 hosts"
     );
@@ -946,13 +966,83 @@ function selectedCalendars(calendarId) {
   return allCalendars().filter(calendar => !calendar.getProperty("disabled"));
 }
 
-function calendarView(calendar) {
+function mainMailWindow() {
+  try {
+    return Cc["@mozilla.org/appshell/window-mediator;1"]
+      .getService(Ci.nsIWindowMediator)
+      .getMostRecentWindow("mail:3pane");
+  } catch (_error) {
+    return null;
+  }
+}
+
+function mainCompositeCalendar() {
+  const window = mainMailWindow();
+  if (!window || !cal.view?.getCompositeCalendar) return null;
+  return cal.view.getCompositeCalendar(window);
+}
+
+function nativeVisibleCalendars() {
+  const composite = mainCompositeCalendar();
+  if (!composite) {
+    return allCalendars().filter(calendar => !calendar.getProperty("disabled"));
+  }
+  return Array.from(composite.getCalendars() || []).filter(
+    calendar => !calendar.getProperty("disabled")
+  );
+}
+
+function nativeTaskTree() {
+  const window = mainMailWindow();
+  return window?.document?.getElementById?.("calendar-task-tree") || null;
+}
+
+function createNativeTaskFilter(filterName = "open", searchText = "") {
+  const name = String(filterName || "open");
+  if (!NATIVE_TASK_FILTERS.has(name)) {
+    throw new ExtensionError("Unsupported Thunderbird Task filter: " + name);
+  }
+
+  // Thunderbird loads calendar-filter.js into the main mail window itself.
+  // Instantiate that exact native calFilter class instead of reimplementing
+  // its task-date/status/recurrence rules in the add-on. This works even when
+  // the built-in Tasks tab/tree is not currently open.
+  const window = mainMailWindow();
+  const Filter = window?.calFilter;
+  if (typeof Filter !== "function") {
+    throw new ExtensionError(
+      "Thunderbird native calFilter is unavailable in the main mail window"
+    );
+  }
+
+  const filter = new Filter();
+  filter.itemType = Ci.calICalendar.ITEM_FILTER_TYPE_TODO;
+  filter.selectedDate = cal.dtz.now();
+  filter.filterText = String(searchText || "");
+  filter.applyFilter(name);
+  return {filter, tree: nativeTaskTree()};
+}
+
+async function readNativeFilteredTasks(filter, calendar) {
+  const items = [];
+  const stream = cal.iterate.streamValues(filter.getItems(calendar));
+  for await (const chunk of stream) {
+    items.push(...chunk);
+  }
+  return items;
+}
+
+function calendarView(calendar, composite = null) {
+  const displayed = composite
+    ? Boolean(composite.getCalendarById(calendar.id))
+    : !calendar.getProperty("disabled");
   return {
     id: String(calendar.id || ""),
     name: String(calendar.name || ""),
     type: String(calendar.type || ""),
     readOnly: Boolean(calendar.readOnly),
     disabled: Boolean(calendar.getProperty("disabled")),
+    displayed,
     supportsTasks: calendarSupports(calendar, "task"),
     supportsEvents: calendarSupports(calendar, "event"),
   };
@@ -1013,6 +1103,11 @@ function taskView(item) {
     completedDate: dateView(item.completedDate),
     description: String(item.getProperty("DESCRIPTION") || ""),
     recurring: Boolean(item.recurrenceInfo || item.recurrenceId),
+    recurrenceId: String(item.recurrenceId?.icalString || ""),
+    instanceKey:
+      String(item.calendar?.superCalendar?.id || item.calendar?.id || "") +
+      "::" + String(item.id || "") +
+      "::" + String(item.recurrenceId?.icalString || ""),
     paused:
       String(item.getProperty("X-CALDAV-ASSISTANT-PAUSED") || "").toUpperCase() ===
       "TRUE",
@@ -1106,20 +1201,46 @@ async function readItems(calendar, filter, start = null, end = null) {
   }
 }
 
-async function findItem(calendar, itemId, kind) {
+async function findItem(calendar, itemId, kind, recurrenceId = "") {
   const id = String(itemId || "");
   const direct = await calendar.getItem(id);
-  if (direct) {
-    if (kind === "task" && !direct.isTodo?.()) {
-      throw new ExtensionError(`Item is not a task: ${id}`);
-    }
-    if (kind === "event" && !direct.isEvent?.()) {
-      throw new ExtensionError(`Item is not an event: ${id}`);
-    }
+  if (!direct) {
+    throw new ExtensionError(`Calendar item not found: ${id}`);
+  }
+
+  if (kind === "task" && !direct.isTodo?.()) {
+    throw new ExtensionError(`Item is not a task: ${id}`);
+  }
+  if (kind === "event" && !direct.isEvent?.()) {
+    throw new ExtensionError(`Item is not an event: ${id}`);
+  }
+
+  const recurrenceText = String(recurrenceId || "").trim();
+  if (!recurrenceText) {
     return direct;
   }
 
-  throw new ExtensionError(`Calendar item not found: ${id}`);
+  if (!direct.recurrenceInfo) {
+    throw new ExtensionError(
+      `Recurring occurrence requested for non-recurring item: ${id}`
+    );
+  }
+
+  let recurrenceDate;
+  try {
+    recurrenceDate = cal.createDateTime(recurrenceText);
+  } catch (_error) {
+    throw new ExtensionError(
+      `Invalid recurrence id for ${id}: ${recurrenceText}`
+    );
+  }
+  const occurrence = direct.recurrenceInfo.getOccurrenceFor(recurrenceDate);
+  if (!occurrence) {
+    throw new ExtensionError(
+      `Recurring occurrence not found: ${id} @ ${recurrenceText}`
+    );
+  }
+  return occurrence;
 }
 
 function setDescription(item, value) {
@@ -1308,7 +1429,48 @@ async function modifyItem(calendar, oldItem, mutator) {
 }
 
 async function listCalendarsApi() {
-  return allCalendars().map(calendarView);
+  const composite = mainCompositeCalendar();
+  return allCalendars().map(calendar => calendarView(calendar, composite));
+}
+
+async function setCalendarDisplayedApi(calendarId, displayed) {
+  const composite = mainCompositeCalendar();
+  if (!composite) {
+    throw new ExtensionError("Thunderbird native Calendar selector is unavailable");
+  }
+  const calendar = calendarById(calendarId);
+  const isDisplayed = Boolean(composite.getCalendarById(calendar.id));
+  if (Boolean(displayed) && !isDisplayed) {
+    composite.addCalendar(calendar);
+  } else if (!displayed && isDisplayed) {
+    composite.removeCalendar(calendar);
+  }
+  return calendarView(calendar, composite);
+}
+
+async function listNativeTasksApi(options = {}) {
+  const {filter, tree} = createNativeTaskFilter(
+    options?.filter || "open",
+    options?.searchText || ""
+  );
+  const batches = await Promise.all(
+    nativeVisibleCalendars()
+      .filter(calendar => calendarSupports(calendar, "task"))
+      .map(async calendar =>
+        (await readNativeFilteredTasks(filter, calendar))
+          .filter(item => item?.isTodo?.())
+      )
+  );
+  const items = batches.flat();
+
+  // Reuse the native tree's active sort column/direction when available.
+  const column = tree?.mTreeView?.selectedColumn;
+  if (column && cal.unifinder?.sortItems) {
+    const key = column.getAttribute("sortKey") || column.getAttribute("itemproperty");
+    const modifier = tree?.mTreeView?.sortDirection === "descending" ? -1 : 1;
+    cal.unifinder.sortItems(items, key, modifier);
+  }
+  return items.map(taskView);
 }
 
 async function listTasksApi(calendarId = "") {
@@ -1343,9 +1505,9 @@ async function listEventsApi(calendarId = "", start = "", end = "") {
   return batches.flat();
 }
 
-async function getTaskApi(calendarId, itemId) {
+async function getTaskApi(calendarId, itemId, recurrenceId = "") {
   const calendar = calendarById(calendarId);
-  const item = await findItem(calendar, itemId, "task");
+  const item = await findItem(calendar, itemId, "task", recurrenceId);
   return taskView(item);
 }
 
@@ -1367,13 +1529,17 @@ async function createTaskApi(calendarId, values) {
   });
 }
 
-async function updateTaskApi(calendarId, itemId, changes) {
+async function updateTaskApi(calendarId, itemId, changes, recurrenceId = "") {
   return loggedMutation(
     "task.update",
-    {calendarId: String(calendarId || ""), itemId: String(itemId || "")},
+    {
+      calendarId: String(calendarId || ""),
+      itemId: String(itemId || ""),
+      recurrenceId: String(recurrenceId || ""),
+    },
     async () => {
       const calendar = writableCalendarById(calendarId, "task");
-      const oldItem = await findItem(calendar, itemId, "task");
+      const oldItem = await findItem(calendar, itemId, "task", recurrenceId);
       const changed = await modifyItem(calendar, oldItem, item =>
         applyTaskChanges(item, changes || {})
       );
@@ -1442,6 +1608,8 @@ this.ThunderbirdCalDAV = class extends ExtensionAPI {
     return {
       ThunderbirdCalDAV: {
         listCalendars: listCalendarsApi,
+        setCalendarDisplayed: setCalendarDisplayedApi,
+        listNativeTasks: listNativeTasksApi,
         listTasks: listTasksApi,
         listEvents: listEventsApi,
         getTask: getTaskApi,

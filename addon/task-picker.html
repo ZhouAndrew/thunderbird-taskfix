@@ -34,17 +34,27 @@
 
     <div class="work-layout">
       <section class="card task-browser">
-        <div class="task-filters">
-          <select id="task-view" aria-label="Task 视图">
-            <option value="incomplete">未完成</option>
-            <option value="today">今天</option>
-            <option value="overdue">已逾期</option>
-            <option value="completed">已完成</option>
-            <option value="all">全部</option>
-          </select>
-          <select id="task-calendar-filter" aria-label="Task Calendar"></select>
+        <div class="native-task-selector">
+          <fieldset class="native-task-filter-group">
+            <legend>Filter Tasks</legend>
+            <label><input type="radio" name="task-view" value="throughcurrent"> 当前任务</label>
+            <label><input type="radio" name="task-view" value="throughtoday"> 今天</label>
+            <label><input type="radio" name="task-view" value="throughsevendays"> 接下来七天</label>
+            <label><input type="radio" name="task-view" value="notstarted"> 未开始</label>
+            <label><input type="radio" name="task-view" value="overdue"> 已逾期</label>
+            <label><input type="radio" name="task-view" value="completed"> 已完成</label>
+            <label><input type="radio" name="task-view" value="open"> 未完成</label>
+            <label><input type="radio" name="task-view" value="all"> 全部</label>
+          </fieldset>
+
+          <fieldset class="native-calendar-filter-group">
+            <legend>Calendars</legend>
+            <div id="task-calendar-list" class="native-calendar-list"></div>
+          </fieldset>
         </div>
+
         <input id="task-search" type="search" placeholder="搜索 Task">
+        <div class="native-filter-note">筛选、循环任务展开和 Calendar 可见性直接使用 Thunderbird 自己的选择系统。</div>
         <div id="task-list" class="item-list"></div>
       </section>
 

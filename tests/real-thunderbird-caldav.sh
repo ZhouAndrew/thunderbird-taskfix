@@ -199,11 +199,49 @@ async function __runTaskPickerAcceptance() {
     "target Task render"
   );
 
-  __pickerAssert(Boolean(document.getElementById("task-view")), "Task picker lost the Task view filter");
-  __pickerAssert(Boolean(document.getElementById("task-calendar-filter")), "Task picker lost the Calendar filter");
+  const nativeFilters = [
+    "throughcurrent",
+    "throughtoday",
+    "throughsevendays",
+    "notstarted",
+    "overdue",
+    "completed",
+    "open",
+    "all",
+  ];
+  for (const value of nativeFilters) {
+    __pickerAssert(
+      Boolean(document.querySelector('input[name="task-view"][value="' + value + '"]')),
+      "Task picker lost Thunderbird native Task filter " + value
+    );
+  }
+  __pickerAssert(
+    document.querySelector('input[name="task-view"][value="open"]')?.checked,
+    "Task picker did not map its default to Thunderbird native open filter"
+  );
+  __pickerAssert(Boolean(document.getElementById("task-calendar-list")), "Task picker lost native Calendar selector");
+  __pickerAssert(
+    [...$("task-calendar-list").querySelectorAll(".native-calendar-row")].some(
+      row => row.textContent.includes("Acceptance")
+    ),
+    "Task picker did not inherit the visible Thunderbird Calendar list"
+  );
   __pickerAssert(Boolean(document.getElementById("task-search")), "Task picker lost search");
   __pickerAssert(!document.getElementById("receipt"), "Detailed result log leaked into Task picker");
   __pickerAssert(!document.getElementById("cancel-confirm"), "Cancel workflow leaked into Task picker");
+
+  // Human-path check that the search is delegated through Thunderbird's
+  // native calFilter rather than the old custom title-only filter.
+  $("task-search").value = targetTitle;
+  $("task-search").dispatchEvent(new Event("input", {bubbles: true}));
+  await __pickerWaitFor(
+    () =>
+      state.tasks.some(task => task.id === targetId) &&
+      [...$("task-list").children].some(
+        row => row.querySelector?.(".item-title")?.textContent === targetTitle
+      ),
+    "native Task search"
+  );
 
   const targetRow = [...$("task-list").children].find(
     row => row.querySelector?.(".item-title")?.textContent === targetTitle
@@ -689,6 +727,51 @@ async function __runRealAcceptance() {
   __acceptanceStage = "wait-calendar-seed";
   const calendar = await __waitForAcceptanceCalendar();
 
+  __acceptanceStage = "native-task-selector-recurring-anki";
+  let nativeAnki = [];
+  for (let attempt = 0; attempt < 120; attempt++) {
+    nativeAnki = await browser.ThunderbirdCalDAV.listNativeTasks({
+      filter: "open",
+      searchText: "Anki",
+    });
+    if (
+      nativeAnki.some(
+        task =>
+          task.id === "anki-recurring" &&
+          task.title === "Anki" &&
+          Boolean(task.recurrenceId)
+      )
+    ) {
+      break;
+    }
+    if (attempt === 119) {
+      throw new Error(
+        "Thunderbird native Task selector did not expose recurring Anki occurrence"
+      );
+    }
+    await __acceptanceDelay(100);
+  }
+
+  __acceptanceStage = "native-calendar-selector";
+  await browser.ThunderbirdCalDAV.setCalendarDisplayed(calendar.id, false);
+  const hiddenNativeTasks = await browser.ThunderbirdCalDAV.listNativeTasks({
+    filter: "open",
+    searchText: "Seed task from Radicale",
+  });
+  __acceptanceAssert(
+    !hiddenNativeTasks.some(task => task.id === "seed-task"),
+    "Hidden Thunderbird Calendar still leaked into native Task selector"
+  );
+  await browser.ThunderbirdCalDAV.setCalendarDisplayed(calendar.id, true);
+  const restoredNativeTasks = await browser.ThunderbirdCalDAV.listNativeTasks({
+    filter: "open",
+    searchText: "Seed task from Radicale",
+  });
+  __acceptanceAssert(
+    restoredNativeTasks.some(task => task.id === "seed-task"),
+    "Restored Thunderbird Calendar did not return to native Task selector"
+  );
+
   __acceptanceStage = "task-picker-start";
   const pickerStartTab = await browser.tabs.create({
     url: browser.runtime.getURL("task-picker.html?acceptance=start"),
@@ -979,12 +1062,14 @@ async function __runRealAcceptance() {
 
   tasks = await browser.ThunderbirdCalDAV.listTasks(calendar.id);
   events = await browser.ThunderbirdCalDAV.listEvents(calendar.id, "", "");
+  const restoredSeed = tasks.find(task => task.id === "seed-task");
+  const recurringAnkiParent = tasks.find(task => task.id === "anki-recurring");
   __acceptanceAssert(
-    tasks.length === 1 &&
-      tasks[0].id === "seed-task" &&
-      tasks[0].status === "NEEDS-ACTION" &&
-      tasks[0].paused === false,
-    "Seed Task was not restored after acceptance"
+    tasks.length === 2 &&
+      restoredSeed?.status === "NEEDS-ACTION" &&
+      restoredSeed?.paused === false &&
+      recurringAnkiParent?.title === "Anki",
+    "Seed/recurring Anki fixtures were not restored after acceptance"
   );
   __acceptanceAssert(events.length === 0, "Acceptance left VEVENT test data behind");
 
@@ -1141,6 +1226,25 @@ END:VTODO
 END:VCALENDAR
 EOF
 curl -fsS -X PUT   -H 'Content-Type: text/calendar; charset=utf-8'   --data-binary @"$TMP/seed.ics"   -u acceptance:test-password   http://127.0.0.1:5232/acceptance/test/seed-task.ics >/dev/null
+
+# Regression fixture for the real user-visible failure: a recurring VTODO named
+# exactly "Anki" must be found through Thunderbird's native Task selector.
+cat >"$TMP/anki-recurring.ics" <<'EOF'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Thunderbird CalDAV Lab Acceptance//EN
+BEGIN:VTODO
+UID:anki-recurring
+DTSTAMP:20260930T000000Z
+SUMMARY:Anki
+DTSTART:20260930T120000Z
+DUE:20260930T130000Z
+RRULE:FREQ=DAILY;COUNT=10
+STATUS:NEEDS-ACTION
+END:VTODO
+END:VCALENDAR
+EOF
+curl -fsS -X PUT   -H 'Content-Type: text/calendar; charset=utf-8'   --data-binary @"$TMP/anki-recurring.ics"   -u acceptance:test-password   http://127.0.0.1:5232/acceptance/test/anki-recurring.ics >/dev/null
 
 echo "== Start acceptance report endpoint =="
 cat >"$TMP/report_server.py" <<'PY'

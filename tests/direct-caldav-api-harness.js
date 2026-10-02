@@ -198,6 +198,70 @@ const calendars = [
   calendarNoEvents,
 ];
 
+const displayedCalendarIds = new Set(["cal-a", "cal-ro", "cal-events-only", "cal-tasks-only"]);
+const compositeCalendar = {
+  getCalendars() {
+    return calendars.filter(calendar => displayedCalendarIds.has(calendar.id));
+  },
+  getCalendarById(id) {
+    return calendars.find(
+      calendar => calendar.id === String(id) && displayedCalendarIds.has(calendar.id)
+    ) || null;
+  },
+  addCalendar(calendar) {
+    displayedCalendarIds.add(calendar.id);
+  },
+  removeCalendar(calendar) {
+    displayedCalendarIds.delete(calendar.id);
+  },
+};
+
+let nativeFilterConstructed = 0;
+const nativeFilterApplications = [];
+class FakeNativeCalFilter {
+  constructor() {
+    nativeFilterConstructed++;
+    this.itemType = 0;
+    this.selectedDate = null;
+    this.filterText = "";
+    this.filterName = "open";
+  }
+  applyFilter(name) {
+    this.filterName = String(name);
+    nativeFilterApplications.push(this.filterName);
+  }
+  getItems(calendar) {
+    const self = this;
+    return (async function* () {
+      let items = await calendar.getItemsAsArray(
+        self.itemType | Ci.calICalendar.ITEM_FILTER_COMPLETED_ALL,
+        0,
+        null,
+        null
+      );
+      if (self.filterName === "open") {
+        items = items.filter(item => !["COMPLETED", "CANCELLED"].includes(item.status));
+      } else if (self.filterName === "completed") {
+        items = items.filter(item => item.status === "COMPLETED");
+      }
+      if (self.filterText) {
+        const query = self.filterText.toLowerCase();
+        items = items.filter(item => String(item.title || "").toLowerCase().includes(query));
+      }
+      yield items;
+    })();
+  }
+}
+const mainMailWindow = {
+  calFilter: FakeNativeCalFilter,
+  document: {
+    getElementById() {
+      // Prove listNativeTasks does not require the built-in Tasks tab/tree to be open.
+      return null;
+    },
+  },
+};
+
 let observer = null;
 const cal = {
   manager: {
@@ -212,20 +276,62 @@ const cal = {
   dtz: {
     defaultTimezone: {tzid: "Asia/Shanghai"},
     UTC: {tzid: "UTC"},
+    now() {
+      return new DateTime("20261002T120000");
+    },
     jsDateToDateTime(value) {
       const iso = value.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
       return new DateTime(iso);
     },
   },
+  view: {
+    getCompositeCalendar(window) {
+      assert(window === mainMailWindow, "native composite received unexpected mail window");
+      return compositeCalendar;
+    },
+  },
+  iterate: {
+    streamValues(stream) {
+      return stream;
+    },
+  },
 };
 
 global.Ci = {
+  nsIIOService: {},
+  nsIWindowMediator: {},
   calICalendar: {
     ITEM_FILTER_COMPLETED_YES: 1,
     ITEM_FILTER_COMPLETED_NO: 2,
     ITEM_FILTER_COMPLETED_ALL: 3,
     ITEM_FILTER_TYPE_TODO: 4,
     ITEM_FILTER_TYPE_EVENT: 8,
+  },
+};
+
+global.Cc = {
+  "@mozilla.org/network/io-service;1": {
+    getService() {
+      return {
+        newURI(value) {
+          const parsed = new URL(String(value));
+          return {
+            scheme: parsed.protocol.replace(/:$/, ""),
+            host: parsed.hostname,
+          };
+        },
+      };
+    },
+  },
+  "@mozilla.org/appshell/window-mediator;1": {
+    getService() {
+      return {
+        getMostRecentWindow(type) {
+          assert(type === "mail:3pane", "unexpected Thunderbird window type");
+          return mainMailWindow;
+        },
+      };
+    },
   },
 };
 
@@ -306,6 +412,23 @@ const api = instance.getAPI({}).ThunderbirdCalDAV;
   const tasks = await api.listTasks();
   assert(tasks.some(x => x.id === "seed"), "enabled task was not listed");
   assert(!tasks.some(x => x.id === "hidden"), "disabled calendar leaked into all-calendar task list");
+
+  const nativeTasks = await api.listNativeTasks({filter: "open", searchText: "Seed"});
+  assert(nativeFilterConstructed === 1, "native calFilter was not instantiated");
+  assert(nativeFilterApplications.at(-1) === "open", "native Task filter name was not delegated");
+  assert(nativeTasks.length === 1 && nativeTasks[0].id === "seed", "native Task selector bridge lost matching task");
+
+  const listedBeforeHide = await api.listCalendars();
+  assert(
+    listedBeforeHide.find(x => x.id === "cal-a").displayed === true,
+    "native Calendar visibility was not exposed"
+  );
+  await api.setCalendarDisplayed("cal-a", false);
+  assert(!displayedCalendarIds.has("cal-a"), "native Calendar hide did not use composite selector");
+  const hiddenByNativeCalendar = await api.listNativeTasks({filter: "open", searchText: "Seed"});
+  assert(hiddenByNativeCalendar.length === 0, "hidden native Calendar leaked into Task selector");
+  await api.setCalendarDisplayed("cal-a", true);
+  assert(displayedCalendarIds.has("cal-a"), "native Calendar show did not use composite selector");
 
   const createdTask = await api.createTask("cal-a", {
     title: "Created",

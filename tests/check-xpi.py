@@ -42,7 +42,7 @@ with zipfile.ZipFile(path) as z:
 
     manifest = json.loads(z.read("manifest.json"))
     assert manifest["name"] == "CalDAV Assistant Experimental"
-    assert manifest["version"] == "0.3.12"
+    assert manifest["version"] == "0.3.13"
     assert manifest["browser_specific_settings"]["gecko"]["id"] == (
         "ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net"
     )
@@ -121,9 +121,21 @@ with zipfile.ZipFile(path) as z:
 
     assert "选择 Task" in task_picker_html
     assert "搜索 Task" in task_picker_html
-    assert 'id="task-view"' in task_picker_html
-    assert 'id="task-calendar-filter"' in task_picker_html
-    assert ">未完成<" in task_picker_html
+    assert 'name="task-view"' in task_picker_html
+    assert 'id="task-calendar-list"' in task_picker_html
+    for native_filter in (
+        "throughcurrent",
+        "throughtoday",
+        "throughsevendays",
+        "notstarted",
+        "overdue",
+        "completed",
+        "open",
+        "all",
+    ):
+        assert f'value="{native_filter}"' in task_picker_html
+    assert "未完成" in task_picker_html
+    assert "接下来七天" in task_picker_html
     assert "最近结果" not in task_picker_html
     assert "AssistantExecutor.putAside" in task_picker
     assert "AssistantExecutor.start" in task_picker
@@ -131,9 +143,24 @@ with zipfile.ZipFile(path) as z:
     assert "开始这个 Task" in task_picker
     assert "先把“" in task_picker
     assert "resolveWorkCalendar" in task_picker
-    assert 'state.taskView = state.settings.taskView || "incomplete"' in task_picker
-    assert 'view === "completed"' in task_picker
-    assert 'view === "overdue"' in task_picker
+    assert "listNativeTasks" in task_picker
+    assert "setCalendarDisplayed" in task_picker
+    assert "taskMatchesView" not in task_picker
+    assert "filteredTasks" not in task_picker
+    assert "createNativeTaskFilter" in direct
+    assert "const Filter = window?.calFilter" in direct
+    assert "const filter = new Filter()" in direct
+    assert "filter.getItems(calendar)" in direct
+    assert "nativeVisibleCalendars" in direct
+    assert "mainCompositeCalendar" in direct
+    assert "setCalendarDisplayed" in schema
+    assert "listNativeTasks" in schema
+    assert "recurrenceId" in task_picker
+    assert "recurrenceId" in executor
+    assert '@mozilla.org/network/io-service;1' in direct
+    assert '@mozilla.org/appshell/window-mediator;1' in direct
+    assert "new URL(url)" not in direct
+    assert "Services.sys.mjs" not in direct
 
     # One simple persistence function freezes log-before-display order.
     assert "persistResult" in storage
@@ -222,4 +249,4 @@ with zipfile.ZipFile(path) as z:
     assert "apply.sh" not in names
     assert "patch_omnijar.py" not in names
 
-print("caldav-assistant-experimental-0.3.12-xpi-contract: PASS")
+print("caldav-assistant-experimental-0.3.13-xpi-contract: PASS")

@@ -14,6 +14,41 @@
         }
       },
       {
+        "name": "setCalendarDisplayed",
+        "type": "function",
+        "async": true,
+        "description": "Use Thunderbird's native composite Calendar selector to show or hide one calendar.",
+        "parameters": [
+          {
+            "name": "calendarId",
+            "type": "string"
+          },
+          {
+            "name": "displayed",
+            "type": "boolean"
+          }
+        ],
+        "returns": {
+          "type": "any"
+        }
+      },
+      {
+        "name": "listNativeTasks",
+        "type": "function",
+        "async": true,
+        "description": "Read tasks through Thunderbird's native task filter/recurrence engine and currently displayed calendars.",
+        "parameters": [
+          {
+            "name": "options",
+            "type": "any",
+            "optional": true
+          }
+        ],
+        "returns": {
+          "type": "any"
+        }
+      },
+      {
         "name": "listTasks",
         "type": "function",
         "async": true,
@@ -59,7 +94,7 @@
         "name": "getTask",
         "type": "function",
         "async": true,
-        "description": "Read one VTODO by UID from a Thunderbird calendar provider for write/read-back verification.",
+        "description": "Read one VTODO or one recurring occurrence by UID/RECURRENCE-ID from a Thunderbird calendar provider for write/read-back verification.",
         "parameters": [
           {
             "name": "calendarId",
@@ -68,6 +103,11 @@
           {
             "name": "itemId",
             "type": "string"
+          },
+          {
+            "name": "recurrenceId",
+            "type": "string",
+            "optional": true
           }
         ],
         "returns": {
@@ -116,7 +156,7 @@
         "name": "updateTask",
         "type": "function",
         "async": true,
-        "description": "Modify a VTODO through Thunderbird's calendar provider.",
+        "description": "Modify a VTODO or one recurring occurrence through Thunderbird's calendar provider.",
         "parameters": [
           {
             "name": "calendarId",
@@ -129,6 +169,11 @@
           {
             "name": "changes",
             "type": "any"
+          },
+          {
+            "name": "recurrenceId",
+            "type": "string",
+            "optional": true
           }
         ],
         "returns": {

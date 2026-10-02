@@ -92,6 +92,48 @@ h1, h2, h3, p { margin-top: 0; }
   margin-bottom: 8px;
 }
 .task-filters select { width: 100%; }
+.native-task-selector {
+  display: grid;
+  grid-template-columns: minmax(165px, .8fr) minmax(190px, 1.2fr);
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.native-task-selector fieldset {
+  border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+  border-radius: 8px;
+  padding: 8px 10px 10px;
+  margin: 0;
+  min-width: 0;
+}
+.native-task-selector legend {
+  font-weight: 650;
+  padding: 0 4px;
+}
+.native-task-filter-group,
+.native-calendar-list {
+  display: grid;
+  gap: 5px;
+}
+.native-task-filter-group label,
+.native-calendar-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.native-task-filter-group input,
+.native-calendar-row input {
+  margin: 0;
+  padding: 0;
+}
+.native-calendar-list {
+  max-height: 190px;
+  overflow: auto;
+}
+.native-filter-note {
+  opacity: .66;
+  font-size: .88em;
+  margin: -3px 0 9px;
+}
 #task-search { width: 100%; margin-bottom: 10px; }
 .item-list {
   display: grid;
@@ -214,7 +256,7 @@ th, td {
 }
 @media (max-width: 820px) {
   .work-layout, .tool-grid { grid-template-columns: 1fr; }
-  .task-filters { grid-template-columns: 1fr; }
+  .task-filters, .native-task-selector { grid-template-columns: 1fr; }
   .item-list { max-height: 42vh; }
 }
 

@@ -1,8 +1,18 @@
 # CalDAV Assistant Experimental
 
-Current build: **0.3.11** for official Thunderbird **153.0.2 through 153.1.x**.
+Current build: **0.3.12** for official Thunderbird **153.0.2 through 153.1.x**.
 
-0.3.11 keeps the 0.3.10 connection behavior and splits the overloaded Work flow into stable, explicit stages. The Work page now shows only the current Task. Task browsing and selection live on a separate Task picker page. Switching is deliberately two-step: put the current Task aside, then explicitly start the selected Task. The add-on remains a direct Thunderbird Calendar/Tasks provider client.
+0.3.12 keeps the segmented 0.3.11 Work flow and makes WordPress/logging behavior visible and verifiable. The Work page now shows only the current Task. Task browsing and selection live on a separate Task picker page. Switching is deliberately two-step: put the current Task aside, then explicitly start the selected Task. The add-on remains a direct Thunderbird Calendar/Tasks provider client.
+
+## 0.3.12 logging and WordPress changes
+
+- WordPress has a first-class page in the main navigation, with visible settings, daily-work-log state and Outbox state.
+- WordPress quick/full tests show the underlying REST attempt, conservative retry, WP-CLI fallback, timing and errors instead of only the final success summary.
+- Operation audit is stored under per-local-date keys and can be copied per day, as currently visible text, or as JSON.
+- Technical diagnostics are physically split into per-local-date files; the previous combined log is migrated on first use.
+- Closing a Work VEVENT writes one idempotent time-range entry into the matching daily WordPress post and read-backs the marker to verify the write.
+- WordPress failure queues an Outbox item and never rolls back the CalDAV Task action. Startup and the WordPress page can retry the Outbox.
+- Work sessions that cross local midnight are split into the corresponding daily posts.
 
 ## Work flow
 

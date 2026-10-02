@@ -247,6 +247,7 @@ $("clear-no").addEventListener("click", () => {
 });
 $("clear-yes").addEventListener("click", async () => {
   $("clear-yes").disabled = true;
+  $("clear-confirm").hidden = true;
   try {
     const date = $("date").value;
     await AssistantStorage.clearAudit(date);
@@ -254,11 +255,10 @@ $("clear-yes").addEventListener("click", async () => {
     setLogStatus(
       date
         ? "✓ 已清空 " + date + " 的操作日志。"
-        : "✓ 已清空全部操作日志。"
+        : "✓ 操作日志已清空。"
     );
   } finally {
     clearing = false;
-    $("clear-confirm").hidden = true;
     $("clear-yes").disabled = false;
     render();
   }

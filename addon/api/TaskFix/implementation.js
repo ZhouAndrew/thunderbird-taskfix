@@ -202,10 +202,7 @@ this.TaskFix = class extends ExtensionCommon.ExtensionAPI {
           appendTaskFixLog("activate-request");
           this._activate();
         },
-        getSelectedTasks: async () => {
-          this._activate();
-          return this._selectedTaskRefs();
-        },
+        getSelectedTasks: async () => this._selectedTaskRefs(),
       },
     };
   }

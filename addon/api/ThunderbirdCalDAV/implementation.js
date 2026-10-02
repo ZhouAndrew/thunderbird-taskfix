@@ -1195,20 +1195,46 @@ async function readItems(calendar, filter, start = null, end = null) {
   }
 }
 
-async function findItem(calendar, itemId, kind) {
+async function findItem(calendar, itemId, kind, recurrenceId = "") {
   const id = String(itemId || "");
   const direct = await calendar.getItem(id);
-  if (direct) {
-    if (kind === "task" && !direct.isTodo?.()) {
-      throw new ExtensionError(`Item is not a task: ${id}`);
-    }
-    if (kind === "event" && !direct.isEvent?.()) {
-      throw new ExtensionError(`Item is not an event: ${id}`);
-    }
+  if (!direct) {
+    throw new ExtensionError(`Calendar item not found: ${id}`);
+  }
+
+  if (kind === "task" && !direct.isTodo?.()) {
+    throw new ExtensionError(`Item is not a task: ${id}`);
+  }
+  if (kind === "event" && !direct.isEvent?.()) {
+    throw new ExtensionError(`Item is not an event: ${id}`);
+  }
+
+  const recurrenceText = String(recurrenceId || "").trim();
+  if (!recurrenceText) {
     return direct;
   }
 
-  throw new ExtensionError(`Calendar item not found: ${id}`);
+  if (!direct.recurrenceInfo) {
+    throw new ExtensionError(
+      `Recurring occurrence requested for non-recurring item: ${id}`
+    );
+  }
+
+  let recurrenceDate;
+  try {
+    recurrenceDate = cal.createDateTime(recurrenceText);
+  } catch (_error) {
+    throw new ExtensionError(
+      `Invalid recurrence id for ${id}: ${recurrenceText}`
+    );
+  }
+  const occurrence = direct.recurrenceInfo.getOccurrenceFor(recurrenceDate);
+  if (!occurrence) {
+    throw new ExtensionError(
+      `Recurring occurrence not found: ${id} @ ${recurrenceText}`
+    );
+  }
+  return occurrence;
 }
 
 function setDescription(item, value) {
@@ -1473,9 +1499,9 @@ async function listEventsApi(calendarId = "", start = "", end = "") {
   return batches.flat();
 }
 
-async function getTaskApi(calendarId, itemId) {
+async function getTaskApi(calendarId, itemId, recurrenceId = "") {
   const calendar = calendarById(calendarId);
-  const item = await findItem(calendar, itemId, "task");
+  const item = await findItem(calendar, itemId, "task", recurrenceId);
   return taskView(item);
 }
 
@@ -1497,13 +1523,17 @@ async function createTaskApi(calendarId, values) {
   });
 }
 
-async function updateTaskApi(calendarId, itemId, changes) {
+async function updateTaskApi(calendarId, itemId, changes, recurrenceId = "") {
   return loggedMutation(
     "task.update",
-    {calendarId: String(calendarId || ""), itemId: String(itemId || "")},
+    {
+      calendarId: String(calendarId || ""),
+      itemId: String(itemId || ""),
+      recurrenceId: String(recurrenceId || ""),
+    },
     async () => {
       const calendar = writableCalendarById(calendarId, "task");
-      const oldItem = await findItem(calendar, itemId, "task");
+      const oldItem = await findItem(calendar, itemId, "task", recurrenceId);
       const changed = await modifyItem(calendar, oldItem, item =>
         applyTaskChanges(item, changes || {})
       );

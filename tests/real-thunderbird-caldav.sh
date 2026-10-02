@@ -77,6 +77,15 @@ taskfix_dir.mkdir(parents=True, exist_ok=True)
         "async": true,
         "parameters": [],
         "returns": {"type": "any"}
+      },
+      {
+        "name": "selectTaskByTitle",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {"name": "title", "type": "string"}
+        ],
+        "returns": {"type": "any"}
       }
     ]
   }
@@ -137,6 +146,40 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             statusButton: Boolean(window.document.getElementById("task-actions-status")),
             contextStatus: Boolean(window.document.getElementById("task-context-menu-status")),
           };
+        },
+        async selectTaskByTitle(title) {
+          const wm = Cc["@mozilla.org/appshell/window-mediator;1"]
+            .getService(Ci.nsIWindowMediator);
+          const window = wm.getMostRecentWindow("mail:3pane");
+          if (!window) return {ok: false, error: "No Thunderbird 3-pane window"};
+
+          if (typeof window.calSwitchToTaskMode === "function") {
+            window.calSwitchToTaskMode();
+          } else {
+            window.document.getElementById("tasksButton")?.click();
+          }
+
+          for (let attempt = 0; attempt < 120; attempt++) {
+            const taskTree = window.document.getElementById("calendar-task-tree");
+            const rows = taskTree?.mTaskArray || [];
+            for (let row = 0; row < rows.length; row++) {
+              const task = taskTree.getTaskAtRow(row);
+              if (String(task?.title || "") !== String(title || "")) continue;
+              taskTree.mTreeView?.selection?.select(row);
+              taskTree.currentIndex = row;
+              taskTree.focus?.();
+              await delay(window, 50);
+              return {
+                ok: true,
+                id: String(task?.id || ""),
+                calendarId: String(task?.calendar?.superCalendar?.id || task?.calendar?.id || ""),
+                recurrenceId: String(task?.recurrenceId?.icalString || ""),
+                title: String(task?.title || ""),
+              };
+            }
+            await delay(window, 100);
+          }
+          return {ok: false, error: "Task row not found: " + title};
         },
       },
     };
@@ -246,13 +289,21 @@ async function __runTaskPickerAcceptance() {
   const targetRow = [...$("task-list").children].find(
     row => row.querySelector?.(".item-title")?.textContent === targetTitle
   );
-  targetRow.click();
-  __pickerAssert($("selected-title").textContent === targetTitle, "Selected Task title was not kept");
 
   if (mode === "start") {
+    await __pickerWaitFor(
+      () =>
+        state.selected?.id === targetId &&
+        state.selectionSource === "thunderbird",
+      "native Thunderbird selection adoption"
+    );
+    __pickerAssert(
+      $("selected-title").textContent === targetTitle,
+      "Task picker did not keep Thunderbird's native selected Task"
+    );
     __pickerAssert($("current-strip").hidden, "Idle Task picker incorrectly shows a current Task");
     __pickerAssert(__pickerButton("开始这个 Task"), "Start action is missing from idle Task selection");
-    __pickerAssert(!__pickerButton("换下当前 Task"), "Put-aside action appeared without a current Task");
+    __pickerAssert(!__pickerButton("换下当前 Task"), "Switch-away action appeared without a current Task");
 
     __pickerButton("开始这个 Task").click();
     await browser.runtime.sendMessage({
@@ -267,36 +318,39 @@ async function __runTaskPickerAcceptance() {
     return;
   }
 
+  targetRow.click();
+  __pickerAssert($("selected-title").textContent === targetTitle, "Selected Task title was not kept");
+
   __pickerAssert(!$("current-strip").hidden, "Switch picker did not show the current Task context");
   __pickerAssert(
     $("current-strip-text").textContent.includes("Seed task from Radicale"),
     "Switch picker lost the current Task context"
   );
-  __pickerAssert(__pickerButton("换下当前 Task"), "Explicit put-aside step is missing");
+  __pickerAssert(__pickerButton("换下当前 Task"), "Explicit switch-away step is missing");
   __pickerAssert(!__pickerButton("开始这个 Task"), "Start was offered before the current Task was put aside");
 
   const before = await AssistantStorage.getLastReceipt();
   __pickerButton("换下当前 Task").click();
-  const receipt = await __pickerWaitForNewReceipt("put-aside", before?.id || null);
+  const receipt = await __pickerWaitForNewReceipt("switch-away", before?.id || null);
   await __pickerWaitFor(
     () =>
       state.runtime?.state === "idle" &&
       state.selected?.id === targetId &&
       Boolean(__pickerButton("开始这个 Task")),
-    "put-aside -> preserved target selection"
+    "switch-away -> preserved target selection"
   );
 
-  __pickerAssert(receipt.logSaved === true, "Put-aside result was not persisted before continuing");
+  __pickerAssert(receipt.logSaved === true, "Switch-away result was not persisted before continuing");
   __pickerAssert(
     $("selected-title").textContent === "Switch target task",
-    "Target selection was lost after putting the current Task aside"
+    "Target selection was lost after switching away from the current Task"
   );
 
   await browser.runtime.sendMessage({
     kind: "thunderbird-caldav-picker-switch-acceptance",
     result: {
       ok: true,
-      putAsideVerified: true,
+      switchAwayVerified: true,
       targetSelectionPreserved: true,
       explicitStartStep: true,
     },
@@ -772,6 +826,31 @@ async function __runRealAcceptance() {
     "Restored Thunderbird Calendar did not return to native Task selector"
   );
 
+  __acceptanceStage = "native-task-selection-bridge";
+  const selectedNative = await browser.AcceptanceTaskFix.selectTaskByTitle(
+    "Seed task from Radicale"
+  );
+  __acceptanceAssert(
+    selectedNative?.ok && selectedNative.id === "seed-task",
+    "Could not select the seed Task in Thunderbird's native Tasks tree"
+  );
+  let bridgedSelection = [];
+  for (let attempt = 0; attempt < 40; attempt++) {
+    bridgedSelection = await browser.TaskFix.getSelectedTasks();
+    if (
+      bridgedSelection.length === 1 &&
+      bridgedSelection[0].id === "seed-task" &&
+      bridgedSelection[0].calendarId === calendar.id
+    ) {
+      break;
+    }
+    await __acceptanceDelay(100);
+  }
+  __acceptanceAssert(
+    bridgedSelection.length === 1 && bridgedSelection[0].id === "seed-task",
+    "CalDAV Assistant did not read Thunderbird's native selected Task"
+  );
+
   __acceptanceStage = "task-picker-start";
   const pickerStartTab = await browser.tabs.create({
     url: browser.runtime.getURL("task-picker.html?acceptance=start"),
@@ -855,10 +934,10 @@ async function __runRealAcceptance() {
     pickerSwitchResult?.ok,
     "Task picker switch acceptance failed: " + (pickerSwitchResult?.error || "unknown")
   );
-  __acceptanceAssert(pickerSwitchResult.putAsideVerified, "Put-aside human path did not pass");
+  __acceptanceAssert(pickerSwitchResult.switchAwayVerified, "Switch-away human path did not pass");
   __acceptanceAssert(
     pickerSwitchResult.targetSelectionPreserved,
-    "Target selection was not preserved across the put-aside step"
+    "Target selection was not preserved across the switch-away step"
   );
   __acceptanceAssert(pickerSwitchResult.explicitStartStep, "Switch flow auto-chained instead of staying segmented");
 
@@ -954,8 +1033,8 @@ async function __runRealAcceptance() {
 
   __acceptanceStage = "verify-workflow-task";
   let workflowTask = await browser.ThunderbirdCalDAV.getTask(calendar.id, "seed-task");
-  __acceptanceAssert(workflowTask.status === "IN-PROCESS", "Put-aside changed seed Task status unexpectedly");
-  __acceptanceAssert(workflowTask.paused === true, "Put-aside did not preserve paused marker on seed Task");
+  __acceptanceAssert(workflowTask.status === "NEEDS-ACTION", "Switch-away did not restore seed Task to its pre-start incomplete status");
+  __acceptanceAssert(workflowTask.paused === false, "Switch-away incorrectly left seed Task paused/resumable");
 
   const switchedTask = await browser.ThunderbirdCalDAV.getTask(calendar.id, switchTarget.id);
   __acceptanceAssert(switchedTask.status === "COMPLETED", "Switched Task Complete was not persisted to CalDAV");
@@ -971,7 +1050,7 @@ async function __runRealAcceptance() {
   __acceptanceAssert(seedWorkEvents.length >= 2, "Start/Resume did not create separate seed Work VEVENTs");
   __acceptanceAssert(
     seedWorkEvents.every(item => item.end && !item.workOpen),
-    "Put-aside left a seed Work VEVENT open"
+    "Switch-away left a seed Work VEVENT open"
   );
   __acceptanceAssert(switchWorkEvents.length >= 1, "Switched Task Start did not create a Work VEVENT");
   __acceptanceAssert(
@@ -985,7 +1064,7 @@ async function __runRealAcceptance() {
   const workflowActions = auditRows
     .filter(row => row.scope === "workflow")
     .map(row => row.action);
-  for (const expected of ["start", "pause", "resume", "put-aside", "complete"]) {
+  for (const expected of ["start", "pause", "resume", "switch-away", "complete"]) {
     __acceptanceAssert(workflowActions.includes(expected), "Persistent audit missing " + expected);
   }
 
@@ -1428,7 +1507,7 @@ hrefs = [
     for node in root.findall(".//{DAV:}href")
     if (node.text or "").strip().endswith(".ics")
 ]
-assert hrefs == ["/acceptance/test/seed-task.ics"], hrefs
+assert sorted(hrefs) == ["/acceptance/test/anki-recurring.ics", "/acceptance/test/seed-task.ics"], hrefs
 print("radicale-clean-after-crud: PASS")
 PY
 
@@ -1511,7 +1590,7 @@ hrefs = [
     for node in root.findall(".//{DAV:}href")
     if (node.text or "").strip().endswith(".ics")
 ]
-assert hrefs == ["/acceptance/test/seed-task.ics"], hrefs
+assert sorted(hrefs) == ["/acceptance/test/anki-recurring.ics", "/acceptance/test/seed-task.ics"], hrefs
 print("radicale-clean-after-restart: PASS")
 PY
 

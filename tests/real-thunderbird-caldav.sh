@@ -199,11 +199,49 @@ async function __runTaskPickerAcceptance() {
     "target Task render"
   );
 
-  __pickerAssert(Boolean(document.getElementById("task-view")), "Task picker lost the Task view filter");
-  __pickerAssert(Boolean(document.getElementById("task-calendar-filter")), "Task picker lost the Calendar filter");
+  const nativeFilters = [
+    "throughcurrent",
+    "throughtoday",
+    "throughsevendays",
+    "notstarted",
+    "overdue",
+    "completed",
+    "open",
+    "all",
+  ];
+  for (const value of nativeFilters) {
+    __pickerAssert(
+      Boolean(document.querySelector('input[name="task-view"][value="' + value + '"]')),
+      "Task picker lost Thunderbird native Task filter " + value
+    );
+  }
+  __pickerAssert(
+    document.querySelector('input[name="task-view"][value="open"]')?.checked,
+    "Task picker did not map its default to Thunderbird native open filter"
+  );
+  __pickerAssert(Boolean(document.getElementById("task-calendar-list")), "Task picker lost native Calendar selector");
+  __pickerAssert(
+    [...$("task-calendar-list").querySelectorAll(".native-calendar-row")].some(
+      row => row.textContent.includes("Acceptance")
+    ),
+    "Task picker did not inherit the visible Thunderbird Calendar list"
+  );
   __pickerAssert(Boolean(document.getElementById("task-search")), "Task picker lost search");
   __pickerAssert(!document.getElementById("receipt"), "Detailed result log leaked into Task picker");
   __pickerAssert(!document.getElementById("cancel-confirm"), "Cancel workflow leaked into Task picker");
+
+  // Human-path check that the search is delegated through Thunderbird's
+  // native calFilter rather than the old custom title-only filter.
+  $("task-search").value = targetTitle;
+  $("task-search").dispatchEvent(new Event("input", {bubbles: true}));
+  await __pickerWaitFor(
+    () =>
+      state.tasks.some(task => task.id === targetId) &&
+      [...$("task-list").children].some(
+        row => row.querySelector?.(".item-title")?.textContent === targetTitle
+      ),
+    "native Task search"
+  );
 
   const targetRow = [...$("task-list").children].find(
     row => row.querySelector?.(".item-title")?.textContent === targetTitle

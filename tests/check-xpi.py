@@ -25,10 +25,13 @@ with zipfile.ZipFile(path) as z:
         "logs.js",
         "tools.html",
         "tools.js",
+        "wordpress.html",
+        "wordpress.js",
         "core/storage.js",
         "core/executor.js",
         "core/connection.js",
         "core/wordpress.js",
+        "core/daily-log.js",
         "content/taskfix-window.js",
         "api/TaskFix/implementation.js",
         "api/TaskFix/schema.json",
@@ -39,11 +42,11 @@ with zipfile.ZipFile(path) as z:
 
     manifest = json.loads(z.read("manifest.json"))
     assert manifest["name"] == "CalDAV Assistant Experimental"
-    assert manifest["version"] == "0.3.11"
+    assert manifest["version"] == "0.3.12"
     assert manifest["browser_specific_settings"]["gecko"]["id"] == (
         "ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net"
     )
-    assert manifest["background"]["scripts"] == ["background.js"]
+    assert manifest["background"]["scripts"] == ["core/storage.js", "core/wordpress.js", "core/daily-log.js", "background.js"]
     assert manifest["browser_specific_settings"]["gecko"]["strict_min_version"] == "153.0.2"
     assert manifest["browser_specific_settings"]["gecko"]["strict_max_version"] == "153.1.*"
     assert "ThunderbirdCalDAV" in manifest["experiment_apis"]
@@ -206,4 +209,4 @@ with zipfile.ZipFile(path) as z:
     assert "apply.sh" not in names
     assert "patch_omnijar.py" not in names
 
-print("caldav-assistant-experimental-0.3.11-xpi-contract: PASS")
+print("caldav-assistant-experimental-0.3.12-xpi-contract: PASS")

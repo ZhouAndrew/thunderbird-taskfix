@@ -27,6 +27,7 @@
       ).trim() || "wp",
       legacyHelperDir: String(config?.legacyHelperDir || "~/bin").trim(),
       allowUntrustedTls: Boolean(config?.allowUntrustedTls),
+      dailyWorkLogEnabled: config?.dailyWorkLogEnabled !== false,
     };
   }
 
@@ -508,6 +509,35 @@
     return true;
   }
 
+  async function diagnosticTraceSince(startedAt) {
+    try {
+      if (typeof browser.ThunderbirdCalDAV?.readDiagnostics !== "function") return [];
+      const data = await browser.ThunderbirdCalDAV.readDiagnostics(5000);
+      const floor = new Date(startedAt).getTime() - 100;
+      const allowed = new Set(["http", "curl-http", "wp-cli", "wordpress", "wp-helper"]);
+      return (data?.lines || [])
+        .map(line => {
+          try {
+            return JSON.parse(line);
+          } catch (_error) {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .filter(item => allowed.has(item.component))
+        .filter(item => new Date(item.ts).getTime() >= floor)
+        .map(item => ({
+          timestamp: item.ts,
+          component: item.component,
+          event: item.event,
+          success: !/error/i.test(String(item.event || "")),
+          details: item.details || {},
+        }));
+    } catch (_error) {
+      return [];
+    }
+  }
+
   async function quickTest() {
     const result = {
       action: "connection.wordpress-quick",
@@ -544,6 +574,7 @@
       result.summary = `WordPress quick test failed: ${errorText(error)}`;
       result.steps.push({name: "WordPress read", success: false, error: errorText(error)});
     }
+    result.trace = await diagnosticTraceSince(result.startedAt);
     result.completedAt = new Date().toISOString();
     return AssistantStorage.persistResult(result, "connection");
   }
@@ -663,6 +694,7 @@
       }
     }
 
+    result.trace = await diagnosticTraceSince(result.startedAt);
     result.completedAt = new Date().toISOString();
     return AssistantStorage.persistResult(result, "connection");
   }
@@ -850,13 +882,21 @@
     );
   }
 
-  function buildLogAppend(content, media, marker, date = new Date()) {
+  function safeLogMarker(value) {
+    const text = String(value || "")
+      .replace(/[^A-Za-z0-9_.:-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 180);
+    return text || logMarker();
+  }
+
+  function buildLogAppend(content, media, marker, date = new Date(), prefixTime = true) {
     const blocks = [`<!-- ${marker} -->`];
     const text = String(content || "").trim();
     if (text) {
       blocks.push(
         "<!-- wp:paragraph -->\n<p>" +
-        currentTimeText(date) + " " +
+        (prefixTime ? currentTimeText(date) + " " : "") +
         escapeHtml(text).replace(/\n/g, "<br>") +
         "</p>\n<!-- /wp:paragraph -->"
       );
@@ -867,7 +907,14 @@
     return blocks.join("\n");
   }
 
-  async function createLog({content, files = []}) {
+  async function createLog({
+    content,
+    files = [],
+    date = new Date(),
+    prefixTime = true,
+    marker = "",
+  }) {
+    const logDate = date instanceof Date ? date : new Date(date);
     const result = {
       action: "wordpress.append-log",
       success: false,
@@ -876,16 +923,21 @@
       summary: "",
       post: null,
       media: [],
+      marker: safeLogMarker(marker),
+      deduplicated: false,
     };
+
     try {
       const text = String(content || "").trim();
       if (!text && !(files || []).length) {
         throw new Error("日志内容或附件不能为空。");
       }
+      if (Number.isNaN(logDate.getTime())) {
+        throw new Error("日志日期无效。");
+      }
 
       await validateTransportConfig();
-
-      const daily = await ensureDailyLogPost();
+      const daily = await ensureDailyLogPost(logDate);
       const postId = daily.post.id;
       result.post = {
         id: postId,
@@ -895,19 +947,43 @@
         createdToday: daily.created,
       };
       result.steps.push({
-        name: daily.created ? "create daily WordPress log post" : "reuse daily WordPress log post",
+        name: daily.created
+          ? "create daily WordPress log post"
+          : "reuse daily WordPress log post",
         success: true,
         postId,
         title: daily.title,
       });
 
+      const before = await request(`/posts/${postId}?context=edit`);
+      const previous = rawContent(before);
+      if (previous.includes(`<!-- ${result.marker} -->`)) {
+        result.success = true;
+        result.deduplicated = true;
+        result.steps.push({
+          name: "deduplicate existing WordPress log marker",
+          success: true,
+          postId,
+          marker: result.marker,
+        });
+        result.summary =
+          `日志已经存在于 ${daily.title}（Post ${postId}），未重复写入。`;
+        result.completedAt = new Date().toISOString();
+        return AssistantStorage.persistResult(result, "wordpress");
+      }
+
       for (const file of files || []) {
-        const uploaded = await uploadMedia(file, file.name || "attachment", postId);
+        const uploaded = await uploadMedia(
+          file,
+          file.name || "attachment",
+          postId
+        );
         const item = {
           id: uploaded.id,
           filename: file.name || "attachment",
           sourceUrl: uploaded.source_url || "",
-          mimeType: file.type || uploaded.mime_type || "application/octet-stream",
+          mimeType:
+            file.type || uploaded.mime_type || "application/octet-stream",
           parent: postId,
         };
         result.media.push(item);
@@ -920,10 +996,13 @@
         });
       }
 
-      const before = await request(`/posts/${postId}?context=edit`);
-      const marker = logMarker();
-      const append = buildLogAppend(text, result.media, marker);
-      const previous = rawContent(before);
+      const append = buildLogAppend(
+        text,
+        result.media,
+        result.marker,
+        logDate,
+        prefixTime
+      );
       const next = previous
         ? previous.replace(/\s+$/, "") + "\n\n" + append
         : append;
@@ -935,7 +1014,7 @@
 
       const read = await request(`/posts/${postId}?context=edit`);
       const verified = rawContent(read);
-      if (!verified.includes(marker)) {
+      if (!verified.includes(`<!-- ${result.marker} -->`)) {
         throw new Error("WordPress log append read-back mismatch.");
       }
 
@@ -943,13 +1022,18 @@
         name: "append + read-back daily WordPress log",
         success: true,
         postId,
-        marker,
+        marker: result.marker,
       });
       result.success = true;
-      result.summary = `已追加到今天的 WordPress 日志（Post ${postId}）。`;
+      result.summary =
+        `已追加到 ${daily.title}（Post ${postId}），并完成回读验证。`;
     } catch (error) {
       result.summary = `WordPress log append failed: ${errorText(error)}`;
-      result.steps.push({name: "failure", success: false, error: errorText(error)});
+      result.steps.push({
+        name: "failure",
+        success: false,
+        error: errorText(error),
+      });
     }
 
     result.completedAt = new Date().toISOString();

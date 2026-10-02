@@ -71,6 +71,9 @@ with zipfile.ZipFile(path) as z:
     logs = z.read("logs.js").decode()
     tools_html = z.read("tools.html").decode()
     tools = z.read("tools.js").decode()
+    wordpress_html = z.read("wordpress.html").decode()
+    wordpress_page = z.read("wordpress.js").decode()
+    daily_log = z.read("core/daily-log.js").decode()
 
     assert "browser.spaces.create" in background
     assert "CalDAV Assistant" in background
@@ -151,18 +154,20 @@ with zipfile.ZipFile(path) as z:
     assert "previous: changed.previous" not in tools
     assert "details: {restored}" not in tools
     assert "Calendar 完整读写" in tools_html
-    assert "WordPress 完整读写" in tools_html
-    assert "WordPress 连接方式" in tools_html
-    assert "Application Password / REST" in tools_html
-    assert "WP-CLI（兼容旧脚本）" in tools_html
-    assert 'id="wp-path"' in tools_html
-    assert 'id="wp-cli"' in tools_html
+    assert "WordPress 设置" in wordpress_html
+    assert "完整读写测试" in wordpress_html
+    assert "Application Password / REST" in wordpress_html
+    assert "WP-CLI（兼容旧脚本）" in wordpress_html
+    assert 'id="wp-path"' in wordpress_html
+    assert 'id="wp-cli"' in wordpress_html
+    assert 'id="wp-daily-work-log"' in wordpress_html
+    assert "底层实际执行" in wordpress_page
     assert "httpRequest" in direct
     assert "curlRequest" in direct
     assert "insecureTls" in direct
     assert "isAllowedInsecureLocalHost" in direct
     assert "allowUntrustedTls" in wordpress
-    assert 'id="wp-allow-untrusted-tls"' in tools_html
+    assert 'id="wp-allow-untrusted-tls"' in wordpress_html
     assert "runWpCli" in direct
     assert "Subprocess.sys.mjs" in direct
     assert "Thunderbird privileged HTTP bridge" in wordpress
@@ -193,6 +198,14 @@ with zipfile.ZipFile(path) as z:
     assert "Media ID" in record_js
 
     assert "AssistantStorage.listAudit" in logs
+    assert "listAuditDates" in storage
+    assert "复制这一天" in logs
+    assert "copy-visible" in logs_html
+    assert "copy-json" in logs_html
+    assert "listDiagnosticsDates" in schema
+    assert "recordClosedWorkSession" in daily_log
+    assert "flushOutbox" in daily_log
+    assert "dailyWorkLogEnabled" in wordpress
     assert "ExtensionUtils" in direct and "ExtensionError" in direct
     assert "CalTodo.sys.mjs" in direct and "new CalTodo()" in direct
     assert "CalEvent.sys.mjs" in direct and "new CalEvent()" in direct

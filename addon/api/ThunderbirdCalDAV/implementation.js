@@ -9,9 +9,6 @@ var {
 var { NetUtil } = ChromeUtils.importESModule(
   "resource://gre/modules/NetUtil.sys.mjs"
 );
-var { Services } = ChromeUtils.importESModule(
-  "resource://gre/modules/Services.sys.mjs"
-);
 var { Subprocess } = ChromeUtils.importESModule(
   "resource://gre/modules/Subprocess.sys.mjs"
 );
@@ -601,7 +598,9 @@ async function curlRequestApi(details = {}) {
     // Use Gecko's URI service instead of the Web-page WHATWG URL global:
     // the latter is not guaranteed to exist here and caused valid local URLs
     // such as https://andrew.local/... to be reported as invalid.
-    parsed = Services.io.newURI(url);
+    parsed = Cc["@mozilla.org/network/io-service;1"]
+      .getService(Ci.nsIIOService)
+      .newURI(url);
   } catch (_error) {
     throw new ExtensionError("curl request URL is invalid");
   }
@@ -968,7 +967,13 @@ function selectedCalendars(calendarId) {
 }
 
 function mainMailWindow() {
-  return Services.wm?.getMostRecentWindow?.("mail:3pane") || null;
+  try {
+    return Cc["@mozilla.org/appshell/window-mediator;1"]
+      .getService(Ci.nsIWindowMediator)
+      .getMostRecentWindow("mail:3pane");
+  } catch (_error) {
+    return null;
+  }
 }
 
 function mainCompositeCalendar() {

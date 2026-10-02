@@ -318,7 +318,7 @@ for (const path of ["addon/core/storage.js", "addon/core/wordpress.js"]) {
     wpCliCommand: "wp",
   });
 
-  const firstAuditWrite = storageWrites.indexOf("caldavAssistant.audit");
+  const firstAuditWrite = storageWrites.findIndex(key => key.startsWith("caldavAssistant.audit."));
   const firstReceiptWrite = storageWrites.indexOf("caldavAssistant.lastReceipt");
   assert(
     firstAuditWrite >= 0 && firstReceiptWrite >= 0 && firstAuditWrite < firstReceiptWrite,

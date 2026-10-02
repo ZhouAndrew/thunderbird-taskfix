@@ -159,6 +159,9 @@ async function normalLifecycle() {
 
   let runtime = await AssistantStorage.getRuntime();
   assert(runtime.state === "working", "runtime is not working after start");
+  assert(runtime.taskBeforeStart?.status === "NEEDS-ACTION", "start did not retain pre-start status");
+  assert(runtime.taskBeforeStart?.paused === false, "start did not retain pre-start paused state");
+  assert(runtime.taskBeforeStart?.percentComplete === 0, "start did not retain pre-start progress");
   const firstWorkId = runtime.currentWorkEvent?.id;
   assert(firstWorkId && events.has(firstWorkId), "start did not persist Work VEVENT");
   assert(events.get(firstWorkId).workOpen === true, "start Work VEVENT is not marked open");
@@ -273,42 +276,62 @@ async function resumeReadbackRollback() {
   assert(runtime.state === "paused" && !runtime.currentWorkEvent, "failed Resume did not restore paused runtime");
 }
 
-async function putAsideLifecycle() {
+async function switchAwayLifecycle() {
   resetAll();
   let receipt = await AssistantExecutor.start(clone(task), "work");
-  assert(receipt.success, "Put-aside setup Start failed");
+  assert(receipt.success, "Switch-away setup Start failed");
   let runtime = await AssistantStorage.getRuntime();
   const workId = runtime.currentWorkEvent.id;
 
-  receipt = await AssistantExecutor.putAside(clone(task));
-  assert(receipt.success, "Put-aside failed");
-  assert(task.status === "IN-PROCESS" && task.paused === true, "Put-aside did not leave Task paused");
-  assert(events.get(workId)?.end && !events.get(workId)?.workOpen, "Put-aside did not close Work VEVENT");
+  receipt = await AssistantExecutor.switchAway(clone(task));
+  assert(receipt.success, "Switch-away failed");
+  assert(task.status === "NEEDS-ACTION", "Switch-away did not restore incomplete status");
+  assert(task.paused === false, "Switch-away incorrectly left Task paused/resumable");
+  assert(task.percentComplete === 0, "Switch-away changed original progress");
+  assert(events.get(workId)?.end && !events.get(workId)?.workOpen, "Switch-away did not close Work VEVENT");
   runtime = await AssistantStorage.getRuntime();
-  assert(runtime.state === "idle" && !runtime.currentTask, "Put-aside did not release the current Task");
+  assert(runtime.state === "idle" && !runtime.currentTask, "Switch-away did not release the current Task");
 
   receipt = await AssistantExecutor.start(clone(task), "work");
-  assert(receipt.success, "Task could not be started again after put-aside");
-  assert(task.status === "IN-PROCESS" && task.paused === false, "Restart after put-aside did not clear paused state");
+  assert(receipt.success, "Task could not be started again after switch-away");
+  assert(task.status === "IN-PROCESS" && task.paused === false, "Restart after switch-away is wrong");
   runtime = await AssistantStorage.getRuntime();
-  assert(runtime.state === "working" && runtime.currentTask?.id === task.id, "Restart after put-aside did not become current");
+  assert(runtime.state === "working" && runtime.currentTask?.id === task.id, "Restart after switch-away did not become current");
 
   receipt = await AssistantExecutor.cancel(clone(task));
-  assert(receipt.success, "Put-aside cleanup Cancel failed");
+  assert(receipt.success, "Switch-away cleanup Cancel failed");
 }
 
-async function putAsidePausedLifecycle() {
+async function switchAwayPausedLifecycle() {
   resetAll();
   let receipt = await AssistantExecutor.start(clone(task), "work");
-  assert(receipt.success, "Paused put-aside setup Start failed");
+  assert(receipt.success, "Paused switch-away setup Start failed");
   receipt = await AssistantExecutor.pause(clone(task));
-  assert(receipt.success, "Paused put-aside setup Pause failed");
+  assert(receipt.success, "Paused switch-away setup Pause failed");
 
-  receipt = await AssistantExecutor.putAside(clone(task));
-  assert(receipt.success, "Put-aside from paused state failed");
-  assert(task.status === "IN-PROCESS" && task.paused === true, "Paused put-aside changed Task state");
+  receipt = await AssistantExecutor.switchAway(clone(task));
+  assert(receipt.success, "Switch-away from paused state failed");
+  assert(task.status === "NEEDS-ACTION", "Paused switch-away did not restore incomplete status");
+  assert(task.paused === false, "Paused switch-away left resumable paused state");
   const runtime = await AssistantStorage.getRuntime();
-  assert(runtime.state === "idle" && !runtime.currentTask, "Paused put-aside did not release current Task");
+  assert(runtime.state === "idle" && !runtime.currentTask, "Paused switch-away did not release current Task");
+}
+
+async function switchAwayRestoresExactPreStartProgress() {
+  resetAll();
+  task.status = "NEEDS-ACTION";
+  task.paused = false;
+  task.percentComplete = 35;
+
+  let receipt = await AssistantExecutor.start(clone(task), "work");
+  assert(receipt.success, "Progress restore setup Start failed");
+  assert(task.status === "IN-PROCESS" && task.percentComplete === 35, "Start lost existing progress");
+
+  receipt = await AssistantExecutor.switchAway(clone(task));
+  assert(receipt.success, "Progress restore switch-away failed");
+  assert(task.status === "NEEDS-ACTION", "Switch-away did not restore original status");
+  assert(task.paused === false, "Switch-away invented paused state");
+  assert(task.percentComplete === 35, "Switch-away did not restore original progress");
 }
 
 async function cancelLifecycle() {
@@ -354,8 +377,9 @@ async function completeWriteRollback() {
   await uncertainCreateRollback();
   await pauseWriteRollback();
   await resumeReadbackRollback();
-  await putAsideLifecycle();
-  await putAsidePausedLifecycle();
+  await switchAwayLifecycle();
+  await switchAwayPausedLifecycle();
+  await switchAwayRestoresExactPreStartProgress();
   await cancelLifecycle();
   await completeWriteRollback();
   console.log("workflow-harness: PASS");

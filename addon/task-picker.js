@@ -11,6 +11,7 @@ const state = {
   settings: {},
   taskView: "open",
   filtersInitialized: false,
+  selectionSource: "",
 };
 
 function displayDate(value) {
@@ -179,6 +180,7 @@ function renderTasks() {
     row.append(title, meta);
     row.addEventListener("click", () => {
       state.selected = task;
+      state.selectionSource = "assistant";
       renderTasks();
       renderSelection();
     });
@@ -202,6 +204,10 @@ function renderSelection() {
   $("flow-note").textContent = "";
   if (!task) return;
 
+  const sourceNote = state.selectionSource === "thunderbird"
+    ? "来自 Thunderbird 当前选择。"
+    : "";
+
   $("selected-title").textContent = task.title || "(无标题)";
   const view = taskState(task);
   $("selected-state").textContent = view.label;
@@ -213,23 +219,26 @@ function renderSelection() {
   const current = taskByRef(state.runtime?.currentTask);
 
   if (finished) {
-    $("flow-note").textContent = "这个 Task 已结束。";
+    $("flow-note").textContent = [sourceNote, "这个 Task 已结束。"].filter(Boolean).join(" ");
     return;
   }
 
   if (sameTaskRef(state.runtime?.currentTask, task)) {
-    $("flow-note").textContent = "这个 Task 就是当前工作。";
+    $("flow-note").textContent = [sourceNote, "这个 Task 就是当前工作。"].filter(Boolean).join(" ");
     return;
   }
 
   if (current) {
     addAction("换下当前 Task", runPutAside, "primary");
-    $("flow-note").textContent =
-      "先把“" + (current.title || "(无标题)") + "”换下来；完成后再开始这个 Task。";
+    $("flow-note").textContent = [
+      sourceNote,
+      "先把“" + (current.title || "(无标题)") + "”换下来；完成后再开始这个 Task。",
+    ].filter(Boolean).join(" ");
     return;
   }
 
   addAction("开始这个 Task", runStart, "primary");
+  $("flow-note").textContent = sourceNote;
 }
 
 async function persistUiFailure(action, task, error) {
@@ -319,15 +328,38 @@ async function refreshAll(preserveSelection = true) {
       searchText: $("task-search").value,
     });
 
-    if (selectedRef) state.selected = taskByRef(selectedRef);
+    if (selectedRef) {
+      state.selected = taskByRef(selectedRef);
+      state.selectionSource = state.selected ? "assistant" : "";
+    } else {
+      const nativeRefs = await browser.TaskFix.getSelectedTasks();
+      if (nativeRefs.length === 1) {
+        const ref = nativeRefs[0];
+        try {
+          state.selected = await browser.ThunderbirdCalDAV.getTask(
+            ref.calendarId,
+            ref.id,
+            ref.recurrenceId || ""
+          );
+          state.selectionSource = "thunderbird";
+        } catch (error) {
+          state.selected = null;
+          state.selectionSource = "";
+          await persistUiFailure("native-selection-read", null, error);
+          showNotice("Thunderbird 当前选中的 Task 无法读取。", true);
+        }
+      } else if (nativeRefs.length > 1) {
+        state.selected = null;
+        state.selectionSource = "";
+        showNotice("Thunderbird 当前选中了多个 Task。请先只选一个，再回到这里。", true);
+      } else {
+        state.selected = null;
+        state.selectionSource = "";
+      }
+    }
 
     renderFilters();
     renderCurrentStrip();
-
-    if (state.selected && !state.tasks.some(task => sameTaskRef(state.selected, task))) {
-      state.selected = null;
-    }
-
     renderTasks();
     renderSelection();
   } catch (error) {
@@ -347,6 +379,7 @@ for (const radio of document.querySelectorAll('input[name="task-view"]')) {
     if (!event.target.checked) return;
     state.taskView = normalizeTaskView(event.target.value);
     state.selected = null;
+    state.selectionSource = "";
     await refreshAll(false);
   });
 }

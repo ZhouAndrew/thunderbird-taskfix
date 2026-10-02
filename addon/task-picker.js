@@ -262,9 +262,9 @@ async function runPutAside() {
   $("actions").querySelectorAll("button").forEach(button => { button.disabled = true; });
   let receipt;
   try {
-    receipt = await AssistantExecutor.putAside(current);
+    receipt = await AssistantExecutor.switchAway(current);
   } catch (error) {
-    receipt = await persistUiFailure("put-aside", current, error);
+    receipt = await persistUiFailure("switch-away", current, error);
   }
 
   // Keep the user's target choice across provider notifications from putting
@@ -274,7 +274,7 @@ async function runPutAside() {
   actionRunning = false;
 
   if (receipt.success) {
-    showNotice("已换下当前 Task。现在可以开始“" + (target.title || "(无标题)") + "”。");
+    showNotice("已结束当前工作，并把原 Task 恢复到开始前的未完成状态。现在可以开始“" + (target.title || "(无标题)") + "”。");
   } else {
     showNotice(receipt.error || receipt.summary || "换下当前 Task 失败。", true);
   }

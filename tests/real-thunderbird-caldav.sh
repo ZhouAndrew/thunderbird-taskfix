@@ -338,8 +338,8 @@ async function __runWorkspaceAcceptance() {
   );
   const navLabels = [...document.querySelectorAll(".tool-nav a")].map(node => node.textContent.trim());
   __workspaceAssert(
-    JSON.stringify(navLabels) === JSON.stringify(["工作", "今天", "记录", "日志", "工具"]),
-    "Work UI did not keep the five stable top-level pages"
+    JSON.stringify(navLabels) === JSON.stringify(["工作", "今天", "记录", "日志", "WordPress", "工具"]),
+    "Work UI did not expose the six stable top-level pages including WordPress"
   );
 
   if (mode === "active") {

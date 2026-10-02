@@ -9,8 +9,7 @@ const state = {
   selected: null,
   runtime: null,
   settings: {},
-  taskView: "incomplete",
-  taskCalendarId: "",
+  taskView: "open",
   filtersInitialized: false,
 };
 
@@ -25,39 +24,37 @@ function displayDate(value) {
 }
 
 function sameTaskRef(ref, task) {
-  return Boolean(ref && task && ref.id === task.id && ref.calendarId === task.calendarId);
+  return Boolean(
+    ref &&
+    task &&
+    ref.id === task.id &&
+    ref.calendarId === task.calendarId &&
+    String(ref.recurrenceId || "") === String(task.recurrenceId || "")
+  );
+}
+
+function normalizeTaskView(value) {
+  const aliases = {
+    incomplete: "open",
+    today: "throughtoday",
+  };
+  const normalized = aliases[String(value || "")] || String(value || "open");
+  return [
+    "throughcurrent",
+    "throughtoday",
+    "throughsevendays",
+    "notstarted",
+    "overdue",
+    "completed",
+    "open",
+    "all",
+  ].includes(normalized)
+    ? normalized
+    : "open";
 }
 
 function taskByRef(ref) {
   return state.tasks.find(task => sameTaskRef(ref, task)) || null;
-}
-
-function dateKey(value) {
-  const text = value?.icalString || "";
-  const match = /^(\d{4})(\d{2})(\d{2})/.exec(text);
-  return match ? match[1] + match[2] + match[3] : "";
-}
-
-function todayKey() {
-  const now = new Date();
-  return String(now.getFullYear()).padStart(4, "0") +
-    String(now.getMonth() + 1).padStart(2, "0") +
-    String(now.getDate()).padStart(2, "0");
-}
-
-function taskMatchesView(task, view) {
-  const status = String(task.status || "").toUpperCase();
-  const completed = Boolean(task.completed) || status === "COMPLETED";
-  const cancelled = status === "CANCELLED";
-  const active = !completed && !cancelled;
-  const due = dateKey(task.due);
-  const today = todayKey();
-
-  if (view === "all") return true;
-  if (view === "completed") return completed;
-  if (view === "today") return active && due === today;
-  if (view === "overdue") return active && Boolean(due) && due < today;
-  return active;
 }
 
 function taskState(task) {
@@ -73,16 +70,6 @@ function taskState(task) {
   if (task.paused) return {label: "已暂停", css: "paused"};
   if (task.status === "IN-PROCESS") return {label: "进行中", css: "working"};
   return {label: "未开始", css: ""};
-}
-
-function filteredTasks() {
-  const search = $("task-search").value.trim().toLocaleLowerCase();
-  return state.tasks.filter(task => {
-    if (state.taskCalendarId && task.calendarId !== state.taskCalendarId) return false;
-    if (!taskMatchesView(task, state.taskView)) return false;
-    if (!search) return true;
-    return String(task.title || "").toLocaleLowerCase().includes(search);
-  });
 }
 
 function enabledTaskCalendars() {
@@ -114,28 +101,40 @@ function showNotice(message, error = false) {
 }
 
 function renderFilters() {
-  $("task-view").value = state.taskView;
-  const select = $("task-calendar-filter");
-  const current = state.taskCalendarId;
-  select.replaceChildren();
-
-  const all = document.createElement("option");
-  all.value = "";
-  all.textContent = "全部 Calendar";
-  select.appendChild(all);
-
-  for (const calendar of enabledTaskCalendars()) {
-    const item = document.createElement("option");
-    item.value = calendar.id;
-    item.textContent = calendar.name + (calendar.readOnly ? " · 只读" : "");
-    select.appendChild(item);
+  for (const radio of document.querySelectorAll('input[name="task-view"]')) {
+    radio.checked = radio.value === state.taskView;
   }
 
-  if ([...select.options].some(item => item.value === current)) {
-    select.value = current;
-  } else {
-    state.taskCalendarId = "";
-    select.value = "";
+  const list = $("task-calendar-list");
+  list.replaceChildren();
+  for (const calendar of enabledTaskCalendars()) {
+    const label = document.createElement("label");
+    label.className = "native-calendar-row";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = Boolean(calendar.displayed);
+    checkbox.disabled = Boolean(calendar.disabled);
+    checkbox.addEventListener("change", async () => {
+      checkbox.disabled = true;
+      try {
+        await browser.ThunderbirdCalDAV.setCalendarDisplayed(
+          calendar.id,
+          checkbox.checked
+        );
+        await refreshAll(true);
+      } catch (error) {
+        checkbox.checked = !checkbox.checked;
+        checkbox.disabled = false;
+        await persistUiFailure("calendar-visibility", state.selected, error);
+        showNotice("修改 Thunderbird Calendar 可见性失败。", true);
+      }
+    });
+
+    const text = document.createElement("span");
+    text.textContent = calendar.name + (calendar.readOnly ? " · 只读" : "");
+    label.append(checkbox, text);
+    list.appendChild(label);
   }
 }
 
@@ -154,7 +153,7 @@ function renderCurrentStrip() {
 
 function renderTasks() {
   $("task-list").replaceChildren();
-  const tasks = filteredTasks();
+  const tasks = state.tasks;
   if (!tasks.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
@@ -299,27 +298,33 @@ async function runStart() {
 async function refreshAll(preserveSelection = true) {
   try {
     const selectedRef = preserveSelection && state.selected
-      ? {id: state.selected.id, calendarId: state.selected.calendarId}
+      ? {
+          id: state.selected.id,
+          calendarId: state.selected.calendarId,
+          recurrenceId: state.selected.recurrenceId || "",
+        }
       : null;
 
     state.calendars = await browser.ThunderbirdCalDAV.listCalendars();
-    state.tasks = await browser.ThunderbirdCalDAV.listTasks();
     state.runtime = await AssistantStorage.getRuntime();
     state.settings = await AssistantStorage.getSettings();
 
     if (!state.filtersInitialized) {
-      state.taskView = state.settings.taskView || "incomplete";
-      state.taskCalendarId = String(state.settings.taskCalendarId || "");
+      state.taskView = normalizeTaskView(state.settings.taskView);
       state.filtersInitialized = true;
     }
+
+    state.tasks = await browser.ThunderbirdCalDAV.listNativeTasks({
+      filter: state.taskView,
+      searchText: $("task-search").value,
+    });
 
     if (selectedRef) state.selected = taskByRef(selectedRef);
 
     renderFilters();
     renderCurrentStrip();
 
-    const visible = filteredTasks();
-    if (state.selected && !visible.some(task => sameTaskRef(state.selected, task))) {
+    if (state.selected && !state.tasks.some(task => sameTaskRef(state.selected, task))) {
       state.selected = null;
     }
 
@@ -331,23 +336,20 @@ async function refreshAll(preserveSelection = true) {
   }
 }
 
-$("task-search").addEventListener("input", renderTasks);
-$("task-view").addEventListener("change", event => {
-  state.taskView = event.target.value || "incomplete";
-  if (state.selected && !filteredTasks().some(task => sameTaskRef(state.selected, task))) {
-    state.selected = null;
-  }
-  renderTasks();
-  renderSelection();
+let searchTimer = null;
+$("task-search").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => refreshAll(true), 120);
 });
-$("task-calendar-filter").addEventListener("change", event => {
-  state.taskCalendarId = event.target.value || "";
-  if (state.selected && !filteredTasks().some(task => sameTaskRef(state.selected, task))) {
+
+for (const radio of document.querySelectorAll('input[name="task-view"]')) {
+  radio.addEventListener("change", async event => {
+    if (!event.target.checked) return;
+    state.taskView = normalizeTaskView(event.target.value);
     state.selected = null;
-  }
-  renderTasks();
-  renderSelection();
-});
+    await refreshAll(false);
+  });
+}
 
 browser.ThunderbirdCalDAV.onItemsChanged.addListener(() => {
   if (actionRunning) return;
@@ -359,12 +361,9 @@ if (browser.storage?.onChanged) {
   browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local" || !changes["caldavAssistant.settings"]) return;
     state.settings = changes["caldavAssistant.settings"].newValue || {};
-    state.taskView = state.settings.taskView || "incomplete";
-    state.taskCalendarId = String(state.settings.taskCalendarId || "");
+    state.taskView = normalizeTaskView(state.settings.taskView);
     state.filtersInitialized = true;
-    renderFilters();
-    renderTasks();
-    renderSelection();
+    refreshAll(true);
   });
 }
 

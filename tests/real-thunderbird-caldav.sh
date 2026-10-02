@@ -1062,12 +1062,14 @@ async function __runRealAcceptance() {
 
   tasks = await browser.ThunderbirdCalDAV.listTasks(calendar.id);
   events = await browser.ThunderbirdCalDAV.listEvents(calendar.id, "", "");
+  const restoredSeed = tasks.find(task => task.id === "seed-task");
+  const recurringAnkiParent = tasks.find(task => task.id === "anki-recurring");
   __acceptanceAssert(
-    tasks.length === 1 &&
-      tasks[0].id === "seed-task" &&
-      tasks[0].status === "NEEDS-ACTION" &&
-      tasks[0].paused === false,
-    "Seed Task was not restored after acceptance"
+    tasks.length === 2 &&
+      restoredSeed?.status === "NEEDS-ACTION" &&
+      restoredSeed?.paused === false &&
+      recurringAnkiParent?.title === "Anki",
+    "Seed/recurring Anki fixtures were not restored after acceptance"
   );
   __acceptanceAssert(events.length === 0, "Acceptance left VEVENT test data behind");
 

@@ -42,7 +42,7 @@ with zipfile.ZipFile(path) as z:
 
     manifest = json.loads(z.read("manifest.json"))
     assert manifest["name"] == "CalDAV Assistant Experimental"
-    assert manifest["version"] == "0.3.13"
+    assert manifest["version"] == "0.3.14"
     assert manifest["browser_specific_settings"]["gecko"]["id"] == (
         "ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net"
     )
@@ -144,6 +144,14 @@ with zipfile.ZipFile(path) as z:
     assert "先把“" in task_picker
     assert "resolveWorkCalendar" in task_picker
     assert "listNativeTasks" in task_picker
+    assert "browser.TaskFix.getSelectedTasks" in task_picker
+    assert "来自 Thunderbird 当前选择" in task_picker
+    assert "优先使用 Thunderbird 原生 Tasks 列表" in task_picker_html
+    taskfix_schema = z.read("api/TaskFix/schema.json").decode()
+    taskfix_impl = z.read("api/TaskFix/implementation.js").decode()
+    assert "getSelectedTasks" in taskfix_schema
+    assert "_selectedTaskRefs" in taskfix_impl
+    assert "recurrenceId" in taskfix_impl
     assert "setCalendarDisplayed" in task_picker
     assert "taskMatchesView" not in task_picker
     assert "filteredTasks" not in task_picker
@@ -249,4 +257,4 @@ with zipfile.ZipFile(path) as z:
     assert "apply.sh" not in names
     assert "patch_omnijar.py" not in names
 
-print("caldav-assistant-experimental-0.3.13-xpi-contract: PASS")
+print("caldav-assistant-experimental-0.3.14-xpi-contract: PASS")

@@ -16,6 +16,17 @@
     const transport = ["auto", "application-password", "wp-cli"].includes(requested)
       ? requested
       : "auto";
+    const hasExistingWordPressConfig = Boolean(
+      config && (
+        config.baseUrl ||
+        config.username ||
+        config.applicationPassword ||
+        config.wordpressPath ||
+        config.wpCliCommand ||
+        config.wpCliExecutable ||
+        config.transport
+      )
+    );
     return {
       transport,
       baseUrl: trimSlash(config?.baseUrl),
@@ -27,7 +38,10 @@
       ).trim() || "wp",
       legacyHelperDir: String(config?.legacyHelperDir || "~/bin").trim(),
       allowUntrustedTls: Boolean(config?.allowUntrustedTls),
-      dailyWorkLogEnabled: config?.dailyWorkLogEnabled !== false,
+      dailyWorkLogEnabled:
+        typeof config?.dailyWorkLogEnabled === "boolean"
+          ? config.dailyWorkLogEnabled
+          : hasExistingWordPressConfig,
     };
   }
 

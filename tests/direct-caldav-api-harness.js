@@ -249,6 +249,21 @@ global.ChromeUtils = {
         readInputStreamToString() { return ""; },
       }};
     }
+    if (url.includes("Services.sys.mjs")) {
+      return {
+        Services: {
+          io: {
+            newURI(value) {
+              const parsed = new URL(String(value));
+              return {
+                scheme: parsed.protocol.replace(/:$/, ""),
+                host: parsed.hostname,
+              };
+            },
+          },
+        },
+      };
+    }
     if (url.includes("Subprocess")) {
       return {
         Subprocess: {

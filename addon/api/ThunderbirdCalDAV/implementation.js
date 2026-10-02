@@ -9,6 +9,9 @@ var {
 var { NetUtil } = ChromeUtils.importESModule(
   "resource://gre/modules/NetUtil.sys.mjs"
 );
+var { Services } = ChromeUtils.importESModule(
+  "resource://gre/modules/Services.sys.mjs"
+);
 var { Subprocess } = ChromeUtils.importESModule(
   "resource://gre/modules/Subprocess.sys.mjs"
 );
@@ -580,17 +583,21 @@ async function curlRequestApi(details = {}) {
   const url = String(details.url || "").trim();
   let parsed;
   try {
-    parsed = new URL(url);
+    // This code runs in Thunderbird's privileged Experiment parent scope.
+    // Use Gecko's URI service instead of the Web-page WHATWG URL global:
+    // the latter is not guaranteed to exist here and caused valid local URLs
+    // such as https://andrew.local/... to be reported as invalid.
+    parsed = Services.io.newURI(url);
   } catch (_error) {
     throw new ExtensionError("curl request URL is invalid");
   }
-  if (parsed.protocol !== "https:") {
+  if (parsed.scheme !== "https") {
     throw new ExtensionError("Insecure TLS mode only accepts https:// URLs");
   }
   if (!details.insecureTls) {
     throw new ExtensionError("curl REST bridge requires explicit insecureTls=true");
   }
-  if (!isAllowedInsecureLocalHost(parsed.hostname)) {
+  if (!isAllowedInsecureLocalHost(parsed.host)) {
     throw new ExtensionError(
       "Insecure TLS mode is restricted to .local, localhost, loopback, and private LAN IPv4 hosts"
     );

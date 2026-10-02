@@ -5,7 +5,37 @@
     return String(error?.message || error || "Unknown error");
   }
 
+  async function diagnosticTraceSince(startedAt) {
+    try {
+      if (typeof browser.ThunderbirdCalDAV?.readDiagnostics !== "function") return [];
+      const data = await browser.ThunderbirdCalDAV.readDiagnostics(5000);
+      const floor = new Date(startedAt).getTime() - 100;
+      const allowed = new Set(["provider", "taskfix-api", "taskfix-window"]);
+      return (data?.lines || [])
+        .map(line => {
+          try {
+            return JSON.parse(line);
+          } catch (_error) {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .filter(item => allowed.has(item.component))
+        .filter(item => new Date(item.ts).getTime() >= floor)
+        .map(item => ({
+          timestamp: item.ts,
+          component: item.component,
+          event: item.event,
+          success: !/error/i.test(String(item.event || "")),
+          details: item.details || {},
+        }));
+    } catch (_error) {
+      return [];
+    }
+  }
+
   async function finish(result) {
+    result.trace = await diagnosticTraceSince(result.startedAt);
     result.completedAt = new Date().toISOString();
     return AssistantStorage.persistResult(result, "connection");
   }

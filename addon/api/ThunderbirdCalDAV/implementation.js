@@ -1459,10 +1459,10 @@ async function listNativeTasksApi(options = {}) {
   const items = batches.flat();
 
   // Reuse the native tree's active sort column/direction when available.
-  const column = tree.mTreeView?.selectedColumn;
+  const column = tree?.mTreeView?.selectedColumn;
   if (column && cal.unifinder?.sortItems) {
     const key = column.getAttribute("sortKey") || column.getAttribute("itemproperty");
-    const modifier = tree.mTreeView.sortDirection === "descending" ? -1 : 1;
+    const modifier = tree?.mTreeView?.sortDirection === "descending" ? -1 : 1;
     cal.unifinder.sortItems(items, key, modifier);
   }
   return items.map(taskView);

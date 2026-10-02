@@ -2,7 +2,7 @@
 
 Current build: **0.3.12** for official Thunderbird **153.0.2 through 153.1.x**.
 
-0.3.12 keeps the segmented 0.3.11 Work flow and makes WordPress/logging behavior visible and verifiable. The Work page now shows only the current Task. Task browsing and selection live on a separate Task picker page. Switching is deliberately two-step: put the current Task aside, then explicitly start the selected Task. The add-on remains a direct Thunderbird Calendar/Tasks provider client.
+0.3.15 keeps the segmented Work flow and makes Task switching restore the previous Task to exactly the state it had before Start. The Work page shows only the current Task. Task browsing and selection live on a separate Task picker page. Switching remains deliberately two-step: release the current Task, then explicitly start the selected Task. The add-on remains a direct Thunderbird Calendar/Tasks provider client.
 
 ## 0.3.12 logging and WordPress changes
 
@@ -39,7 +39,7 @@ Switch Task
 -> Work
 ```
 
-Putting a Task aside is not the same as completing it. The current VTODO remains `STATUS:IN-PROCESS` with the Assistant paused marker, its open Work VEVENT is closed and verified, and the runtime current-task pointer is released. The target Task is not auto-started.
+Switching away is not Pause and is not Complete. The current open Work VEVENT is closed and verified, then the VTODO is restored to the exact status / paused marker / percent-complete snapshot captured immediately before Start. For an ordinary incomplete Task this means it returns to incomplete (`NEEDS-ACTION`), with no Assistant paused marker and no Resume state. The runtime current-task pointer is then released. The target Task is not auto-started.
 
 The Work page does **not** contain the Task browser, filter controls, detailed operation logs, UID, raw VTODO state, internal Assistant state, Work Calendar selectors, provider IDs, or JSON details.
 
@@ -68,7 +68,7 @@ Inferred Work Calendar choices are one-shot only; the Assistant no longer silent
 
 The core is plain functions plus a few plain JavaScript objects. There is no extra workflow framework or class hierarchy.
 
-`core/executor.js` exposes Start/Pause/PutAside/Resume/Complete/Cancel functions.
+`core/executor.js` exposes Start/Pause/SwitchAway/Resume/Complete/Cancel functions; `putAside` remains only as a compatibility alias for older 0.3.11–0.3.14 callers.
 
 `core/connection.js` tests Calendar reads/writes.
 

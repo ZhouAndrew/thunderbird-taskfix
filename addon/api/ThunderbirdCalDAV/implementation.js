@@ -33,6 +33,20 @@ const TASK_STATUSES = new Set([
   "CANCELLED",
 ]);
 
+// These are Thunderbird's own task filter identifiers from the built-in
+// task sidebar / calendar-task-tree. Keep the identifiers, not a copied
+// reimplementation of their semantics.
+const NATIVE_TASK_FILTERS = new Set([
+  "throughcurrent",
+  "throughtoday",
+  "throughsevendays",
+  "notstarted",
+  "overdue",
+  "completed",
+  "open",
+  "all",
+]);
+
 const LOG_FILE_PREFIX = "caldav-assistant-experimental-";
 const LOG_FILE_SUFFIX = ".log";
 const LOG_LEGACY_FILE_NAME = "caldav-assistant-experimental.log";
@@ -953,13 +967,76 @@ function selectedCalendars(calendarId) {
   return allCalendars().filter(calendar => !calendar.getProperty("disabled"));
 }
 
-function calendarView(calendar) {
+function mainMailWindow() {
+  return Services.wm?.getMostRecentWindow?.("mail:3pane") || null;
+}
+
+function mainCompositeCalendar() {
+  const window = mainMailWindow();
+  if (!window || !cal.view?.getCompositeCalendar) return null;
+  return cal.view.getCompositeCalendar(window);
+}
+
+function nativeVisibleCalendars() {
+  const composite = mainCompositeCalendar();
+  if (!composite) {
+    return allCalendars().filter(calendar => !calendar.getProperty("disabled"));
+  }
+  return Array.from(composite.getCalendars() || []).filter(
+    calendar => !calendar.getProperty("disabled")
+  );
+}
+
+function nativeTaskTree() {
+  const window = mainMailWindow();
+  const tree = window?.document?.getElementById?.("calendar-task-tree") || null;
+  if (!tree?.mFilter) {
+    throw new ExtensionError(
+      "Thunderbird native Task selector is unavailable in the main mail window"
+    );
+  }
+  return tree;
+}
+
+function createNativeTaskFilter(filterName = "open", searchText = "") {
+  const name = String(filterName || "open");
+  if (!NATIVE_TASK_FILTERS.has(name)) {
+    throw new ExtensionError("Unsupported Thunderbird Task filter: " + name);
+  }
+
+  // Reuse Thunderbird's own calFilter class through the live native task tree.
+  // This intentionally avoids duplicating date/status/recurrence rules in the
+  // add-on, so changes made by Thunderbird remain authoritative.
+  const tree = nativeTaskTree();
+  const Filter = tree.mFilter.constructor;
+  const filter = new Filter();
+  filter.itemType = Ci.calICalendar.ITEM_FILTER_TYPE_TODO;
+  filter.selectedDate = tree.getInitialDate?.() || cal.dtz.now();
+  filter.filterText = String(searchText || "");
+  filter.applyFilter(name);
+  return {filter, tree};
+}
+
+async function readNativeFilteredTasks(filter, calendar) {
+  const items = [];
+  const stream = cal.iterate.streamValues(filter.getItems(calendar));
+  for await (const chunk of stream) {
+    items.push(...chunk);
+  }
+  return items;
+}
+
+function calendarView(calendar, composite = null) {
+  const displayed = composite
+    ? Boolean(composite.getCalendarById(calendar.id))
+    : !calendar.getProperty("disabled");
   return {
     id: String(calendar.id || ""),
     name: String(calendar.name || ""),
     type: String(calendar.type || ""),
     readOnly: Boolean(calendar.readOnly),
     disabled: Boolean(calendar.getProperty("disabled")),
+    displayed,
     supportsTasks: calendarSupports(calendar, "task"),
     supportsEvents: calendarSupports(calendar, "event"),
   };
@@ -1020,6 +1097,11 @@ function taskView(item) {
     completedDate: dateView(item.completedDate),
     description: String(item.getProperty("DESCRIPTION") || ""),
     recurring: Boolean(item.recurrenceInfo || item.recurrenceId),
+    recurrenceId: String(item.recurrenceId?.icalString || ""),
+    instanceKey:
+      String(item.calendar?.superCalendar?.id || item.calendar?.id || "") +
+      "::" + String(item.id || "") +
+      "::" + String(item.recurrenceId?.icalString || ""),
     paused:
       String(item.getProperty("X-CALDAV-ASSISTANT-PAUSED") || "").toUpperCase() ===
       "TRUE",
@@ -1315,7 +1397,48 @@ async function modifyItem(calendar, oldItem, mutator) {
 }
 
 async function listCalendarsApi() {
-  return allCalendars().map(calendarView);
+  const composite = mainCompositeCalendar();
+  return allCalendars().map(calendar => calendarView(calendar, composite));
+}
+
+async function setCalendarDisplayedApi(calendarId, displayed) {
+  const composite = mainCompositeCalendar();
+  if (!composite) {
+    throw new ExtensionError("Thunderbird native Calendar selector is unavailable");
+  }
+  const calendar = calendarById(calendarId);
+  const isDisplayed = Boolean(composite.getCalendarById(calendar.id));
+  if (Boolean(displayed) && !isDisplayed) {
+    composite.addCalendar(calendar);
+  } else if (!displayed && isDisplayed) {
+    composite.removeCalendar(calendar);
+  }
+  return calendarView(calendar, composite);
+}
+
+async function listNativeTasksApi(options = {}) {
+  const {filter, tree} = createNativeTaskFilter(
+    options?.filter || "open",
+    options?.searchText || ""
+  );
+  const batches = await Promise.all(
+    nativeVisibleCalendars()
+      .filter(calendar => calendarSupports(calendar, "task"))
+      .map(async calendar =>
+        (await readNativeFilteredTasks(filter, calendar))
+          .filter(item => item?.isTodo?.())
+      )
+  );
+  const items = batches.flat();
+
+  // Reuse the native tree's active sort column/direction when available.
+  const column = tree.mTreeView?.selectedColumn;
+  if (column && cal.unifinder?.sortItems) {
+    const key = column.getAttribute("sortKey") || column.getAttribute("itemproperty");
+    const modifier = tree.mTreeView.sortDirection === "descending" ? -1 : 1;
+    cal.unifinder.sortItems(items, key, modifier);
+  }
+  return items.map(taskView);
 }
 
 async function listTasksApi(calendarId = "") {
@@ -1449,6 +1572,8 @@ this.ThunderbirdCalDAV = class extends ExtensionAPI {
     return {
       ThunderbirdCalDAV: {
         listCalendars: listCalendarsApi,
+        setCalendarDisplayed: setCalendarDisplayedApi,
+        listNativeTasks: listNativeTasksApi,
         listTasks: listTasksApi,
         listEvents: listEventsApi,
         getTask: getTaskApi,

@@ -1507,7 +1507,7 @@ hrefs = [
     for node in root.findall(".//{DAV:}href")
     if (node.text or "").strip().endswith(".ics")
 ]
-assert hrefs == ["/acceptance/test/seed-task.ics"], hrefs
+assert hrefs == ["/acceptance/test/anki-recurring.ics", "/acceptance/test/seed-task.ics"], hrefs
 print("radicale-clean-after-crud: PASS")
 PY
 
@@ -1590,7 +1590,7 @@ hrefs = [
     for node in root.findall(".//{DAV:}href")
     if (node.text or "").strip().endswith(".ics")
 ]
-assert hrefs == ["/acceptance/test/seed-task.ics"], hrefs
+assert hrefs == ["/acceptance/test/anki-recurring.ics", "/acceptance/test/seed-task.ics"], hrefs
 print("radicale-clean-after-restart: PASS")
 PY
 

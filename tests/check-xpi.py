@@ -157,8 +157,10 @@ with zipfile.ZipFile(path) as z:
     assert "listNativeTasks" in schema
     assert "recurrenceId" in task_picker
     assert "recurrenceId" in executor
-    assert "Services.io.newURI" in direct
+    assert '@mozilla.org/network/io-service;1' in direct
+    assert '@mozilla.org/appshell/window-mediator;1' in direct
     assert "new URL(url)" not in direct
+    assert "Services.sys.mjs" not in direct
 
     # One simple persistence function freezes log-before-display order.
     assert "persistResult" in storage

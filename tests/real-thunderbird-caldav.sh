@@ -77,6 +77,15 @@ taskfix_dir.mkdir(parents=True, exist_ok=True)
         "async": true,
         "parameters": [],
         "returns": {"type": "any"}
+      },
+      {
+        "name": "selectTaskByTitle",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {"name": "title", "type": "string"}
+        ],
+        "returns": {"type": "any"}
       }
     ]
   }
@@ -137,6 +146,40 @@ this.AcceptanceTaskFix = class extends ExtensionCommon.ExtensionAPI {
             statusButton: Boolean(window.document.getElementById("task-actions-status")),
             contextStatus: Boolean(window.document.getElementById("task-context-menu-status")),
           };
+        },
+        async selectTaskByTitle(title) {
+          const wm = Cc["@mozilla.org/appshell/window-mediator;1"]
+            .getService(Ci.nsIWindowMediator);
+          const window = wm.getMostRecentWindow("mail:3pane");
+          if (!window) return {ok: false, error: "No Thunderbird 3-pane window"};
+
+          if (typeof window.calSwitchToTaskMode === "function") {
+            window.calSwitchToTaskMode();
+          } else {
+            window.document.getElementById("tasksButton")?.click();
+          }
+
+          for (let attempt = 0; attempt < 120; attempt++) {
+            const taskTree = window.document.getElementById("calendar-task-tree");
+            const rows = taskTree?.mTaskArray || [];
+            for (let row = 0; row < rows.length; row++) {
+              const task = taskTree.getTaskAtRow(row);
+              if (String(task?.title || "") !== String(title || "")) continue;
+              taskTree.mTreeView?.selection?.select(row);
+              taskTree.currentIndex = row;
+              taskTree.focus?.();
+              await delay(window, 50);
+              return {
+                ok: true,
+                id: String(task?.id || ""),
+                calendarId: String(task?.calendar?.superCalendar?.id || task?.calendar?.id || ""),
+                recurrenceId: String(task?.recurrenceId?.icalString || ""),
+                title: String(task?.title || ""),
+              };
+            }
+            await delay(window, 100);
+          }
+          return {ok: false, error: "Task row not found: " + title};
         },
       },
     };
@@ -246,10 +289,18 @@ async function __runTaskPickerAcceptance() {
   const targetRow = [...$("task-list").children].find(
     row => row.querySelector?.(".item-title")?.textContent === targetTitle
   );
-  targetRow.click();
-  __pickerAssert($("selected-title").textContent === targetTitle, "Selected Task title was not kept");
 
   if (mode === "start") {
+    await __pickerWaitFor(
+      () =>
+        state.selected?.id === targetId &&
+        state.selectionSource === "thunderbird",
+      "native Thunderbird selection adoption"
+    );
+    __pickerAssert(
+      $("selected-title").textContent === targetTitle,
+      "Task picker did not keep Thunderbird's native selected Task"
+    );
     __pickerAssert($("current-strip").hidden, "Idle Task picker incorrectly shows a current Task");
     __pickerAssert(__pickerButton("开始这个 Task"), "Start action is missing from idle Task selection");
     __pickerAssert(!__pickerButton("换下当前 Task"), "Put-aside action appeared without a current Task");
@@ -266,6 +317,9 @@ async function __runTaskPickerAcceptance() {
     });
     return;
   }
+
+  targetRow.click();
+  __pickerAssert($("selected-title").textContent === targetTitle, "Selected Task title was not kept");
 
   __pickerAssert(!$("current-strip").hidden, "Switch picker did not show the current Task context");
   __pickerAssert(
@@ -770,6 +824,31 @@ async function __runRealAcceptance() {
   __acceptanceAssert(
     restoredNativeTasks.some(task => task.id === "seed-task"),
     "Restored Thunderbird Calendar did not return to native Task selector"
+  );
+
+  __acceptanceStage = "native-task-selection-bridge";
+  const selectedNative = await browser.AcceptanceTaskFix.selectTaskByTitle(
+    "Seed task from Radicale"
+  );
+  __acceptanceAssert(
+    selectedNative?.ok && selectedNative.id === "seed-task",
+    "Could not select the seed Task in Thunderbird's native Tasks tree"
+  );
+  let bridgedSelection = [];
+  for (let attempt = 0; attempt < 40; attempt++) {
+    bridgedSelection = await browser.TaskFix.getSelectedTasks();
+    if (
+      bridgedSelection.length === 1 &&
+      bridgedSelection[0].id === "seed-task" &&
+      bridgedSelection[0].calendarId === calendar.id
+    ) {
+      break;
+    }
+    await __acceptanceDelay(100);
+  }
+  __acceptanceAssert(
+    bridgedSelection.length === 1 && bridgedSelection[0].id === "seed-task",
+    "CalDAV Assistant did not read Thunderbird's native selected Task"
   );
 
   __acceptanceStage = "task-picker-start";

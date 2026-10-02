@@ -727,6 +727,51 @@ async function __runRealAcceptance() {
   __acceptanceStage = "wait-calendar-seed";
   const calendar = await __waitForAcceptanceCalendar();
 
+  __acceptanceStage = "native-task-selector-recurring-anki";
+  let nativeAnki = [];
+  for (let attempt = 0; attempt < 120; attempt++) {
+    nativeAnki = await browser.ThunderbirdCalDAV.listNativeTasks({
+      filter: "open",
+      searchText: "Anki",
+    });
+    if (
+      nativeAnki.some(
+        task =>
+          task.id === "anki-recurring" &&
+          task.title === "Anki" &&
+          Boolean(task.recurrenceId)
+      )
+    ) {
+      break;
+    }
+    if (attempt === 119) {
+      throw new Error(
+        "Thunderbird native Task selector did not expose recurring Anki occurrence"
+      );
+    }
+    await __acceptanceDelay(100);
+  }
+
+  __acceptanceStage = "native-calendar-selector";
+  await browser.ThunderbirdCalDAV.setCalendarDisplayed(calendar.id, false);
+  const hiddenNativeTasks = await browser.ThunderbirdCalDAV.listNativeTasks({
+    filter: "open",
+    searchText: "Seed task from Radicale",
+  });
+  __acceptanceAssert(
+    !hiddenNativeTasks.some(task => task.id === "seed-task"),
+    "Hidden Thunderbird Calendar still leaked into native Task selector"
+  );
+  await browser.ThunderbirdCalDAV.setCalendarDisplayed(calendar.id, true);
+  const restoredNativeTasks = await browser.ThunderbirdCalDAV.listNativeTasks({
+    filter: "open",
+    searchText: "Seed task from Radicale",
+  });
+  __acceptanceAssert(
+    restoredNativeTasks.some(task => task.id === "seed-task"),
+    "Restored Thunderbird Calendar did not return to native Task selector"
+  );
+
   __acceptanceStage = "task-picker-start";
   const pickerStartTab = await browser.tabs.create({
     url: browser.runtime.getURL("task-picker.html?acceptance=start"),
@@ -1179,6 +1224,25 @@ END:VTODO
 END:VCALENDAR
 EOF
 curl -fsS -X PUT   -H 'Content-Type: text/calendar; charset=utf-8'   --data-binary @"$TMP/seed.ics"   -u acceptance:test-password   http://127.0.0.1:5232/acceptance/test/seed-task.ics >/dev/null
+
+# Regression fixture for the real user-visible failure: a recurring VTODO named
+# exactly "Anki" must be found through Thunderbird's native Task selector.
+cat >"$TMP/anki-recurring.ics" <<'EOF'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Thunderbird CalDAV Lab Acceptance//EN
+BEGIN:VTODO
+UID:anki-recurring
+DTSTAMP:20260930T000000Z
+SUMMARY:Anki
+DTSTART:20260930T120000Z
+DUE:20260930T130000Z
+RRULE:FREQ=DAILY;COUNT=10
+STATUS:NEEDS-ACTION
+END:VTODO
+END:VCALENDAR
+EOF
+curl -fsS -X PUT   -H 'Content-Type: text/calendar; charset=utf-8'   --data-binary @"$TMP/anki-recurring.ics"   -u acceptance:test-password   http://127.0.0.1:5232/acceptance/test/anki-recurring.ics >/dev/null
 
 echo "== Start acceptance report endpoint =="
 cat >"$TMP/report_server.py" <<'PY'

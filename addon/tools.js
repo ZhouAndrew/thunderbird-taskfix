@@ -16,73 +16,91 @@ function renderResult(result) {
     root.textContent = "尚未测试。";
     return;
   }
+
   const head = document.createElement("div");
   head.className = "result-summary " + (result.success ? "ok" : "fail");
-  head.textContent = (result.success ? "✓ " : "✗ ") + (result.summary || result.action);
+  head.textContent =
+    (result.success ? "✓ " : "✗ ") + (result.summary || result.action);
   root.appendChild(head);
 
   const list = document.createElement("ul");
   list.className = "result-list";
   for (const step of result.steps || []) {
     const item = document.createElement("li");
-    const latency = step.latencyMs !== undefined ? " · " + step.latencyMs + " ms" : "";
-    item.textContent = (step.success === false ? "✗ " : "✓ ") +
-      (step.name || step.operation || "步骤") + latency;
-    list.appendChild(item);
-  }
-  if (result.logSaved === false) {
-    const item = document.createElement("li");
-    item.textContent = "⚠ 持久日志保存失败：" + (result.logError || "未知错误");
-    list.appendChild(item);
-  } else if (result.logSaved === true) {
-    const item = document.createElement("li");
-    item.textContent = "结果已写入日志";
+    const latency =
+      step.latencyMs !== undefined ? " · " + step.latencyMs + " ms" : "";
+    item.textContent =
+      (step.success === false ? "✗ " : "✓ ") +
+      (step.name || step.operation || "步骤") +
+      latency +
+      (step.error ? " · " + step.error : "");
     list.appendChild(item);
   }
   root.appendChild(list);
-}
 
-async function saveWordPressFromForm() {
-  await AssistantWordPress.saveConfig({
-    transport: $("wp-transport").value,
-    baseUrl: $("wp-url").value,
-    username: $("wp-user").value,
-    applicationPassword: $("wp-password").value,
-    allowUntrustedTls: $("wp-allow-untrusted-tls").checked,
-    wordpressPath: $("wp-path").value,
-    wpCliCommand: $("wp-cli").value,
-    legacyHelperDir: $("wp-helper-dir").value,
-  });
+  const traceTitle = document.createElement("h3");
+  traceTitle.textContent = "底层实际执行";
+  root.appendChild(traceTitle);
+  const traceList = document.createElement("ul");
+  traceList.className = "result-list trace-list";
+  for (const trace of result.trace || []) {
+    const item = document.createElement("li");
+    const failed =
+      trace.success === false || /error/i.test(trace.event || "");
+    const duration =
+      trace.details?.durationMs !== undefined
+        ? " · " + trace.details.durationMs + " ms"
+        : "";
+    const reason =
+      trace.details?.error?.message ||
+      trace.details?.message ||
+      "";
+    item.textContent =
+      (failed ? "✗ " : "✓ ") +
+      (trace.timestamp || "") + " · " +
+      (trace.component || "trace") + " · " +
+      (trace.event || "event") +
+      duration +
+      (reason ? " · " + reason : "");
+    traceList.appendChild(item);
+  }
+  if (!(result.trace || []).length) {
+    const item = document.createElement("li");
+    item.textContent = "没有额外底层诊断；上面的测试步骤就是完整路径。";
+    traceList.appendChild(item);
+  }
+  root.appendChild(traceList);
+
+  const pre = document.createElement("pre");
+  pre.textContent = JSON.stringify(result, null, 2);
+  root.appendChild(pre);
 }
 
 async function saveSettings() {
-  await saveWordPressFromForm();
-
   const changed = await AssistantStorage.saveSettingsWithUndo({
     taskView: $("task-view").value || "incomplete",
     taskCalendarId: $("task-calendar").value,
     workCalendarId: $("work-calendar").value,
   });
 
-  const result = {
+  const result = await AssistantStorage.persistResult({
     action: "settings.save",
     success: true,
     startedAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
-    summary: "设置已保存。",
+    summary: "Task / Calendar 设置已保存。",
     steps: [{
       component: "Settings",
       operation: "save defaults",
       success: true,
-      details: {
-        keys: changed.keys,
-      },
+      details: {keys: changed.keys},
     }],
-  };
-  const stored = await AssistantStorage.persistResult(result, "system");
-  $("save-result").textContent = stored.logSaved === false
-    ? "⚠ 设置已保存，但日志保存失败。可以撤销刚才的 Calendar / 视图设置。"
-    : "✓ 设置已保存。可以继续使用，也可以撤销刚才的 Calendar / 视图设置。";
+  }, "system");
+
+  $("save-result").textContent =
+    result.logSaved === false
+      ? "⚠ 设置已保存，但日志保存失败。"
+      : "✓ 设置已保存。";
   $("undo-settings").hidden = false;
 }
 
@@ -93,35 +111,21 @@ async function undoSettings() {
     $("undo-settings").hidden = true;
     return;
   }
-
-  const result = await AssistantStorage.persistResult({
-    action: "settings.undo",
-    success: true,
-    startedAt: new Date().toISOString(),
-    completedAt: new Date().toISOString(),
-    summary: "已撤销刚才的 Calendar / 视图设置。",
-    steps: [{
-      component: "Settings",
-      operation: "undo defaults",
-      success: true,
-      details: {keys: ["taskView", "taskCalendarId", "workCalendarId"]},
-    }],
-  }, "system");
-
   await load();
-  $("save-result").textContent = result.logSaved === false
-    ? "⚠ 设置已撤销，但日志保存失败。"
-    : "✓ 已撤销刚才的 Calendar / 视图设置。";
+  $("save-result").textContent = "✓ 已撤销刚才的 Calendar / 视图设置。";
 }
 
 async function load() {
   calendars = await browser.ThunderbirdCalDAV.listCalendars();
   const settings = await AssistantStorage.getSettings();
-  const wp = await AssistantWordPress.getConfig();
 
   $("task-calendar").replaceChildren();
   option($("task-calendar"), "", "全部 Task Calendar");
-  for (const calendar of calendars.filter(item => item.supportsTasks && !item.disabled)) {
+  for (
+    const calendar of calendars.filter(
+      item => item.supportsTasks && !item.disabled
+    )
+  ) {
     option(
       $("task-calendar"),
       calendar.id,
@@ -130,37 +134,30 @@ async function load() {
   }
 
   $("work-calendar").replaceChildren();
-  for (const calendar of calendars.filter(item =>
-    item.supportsEvents && !item.disabled && !item.readOnly
-  )) {
+  for (
+    const calendar of calendars.filter(
+      item => item.supportsEvents && !item.disabled && !item.readOnly
+    )
+  ) {
     option($("work-calendar"), calendar.id, calendar.name);
   }
 
   $("task-view").value = settings.taskView || "incomplete";
+  const taskCalendarExists = [...$("task-calendar").options].some(
+    item => item.value === (settings.taskCalendarId || "")
+  );
+  $("task-calendar").value =
+    taskCalendarExists ? (settings.taskCalendarId || "") : "";
 
-  const taskCalendarExists = [...$("task-calendar").options]
-    .some(item => item.value === (settings.taskCalendarId || ""));
-  $("task-calendar").value = taskCalendarExists ? (settings.taskCalendarId || "") : "";
-
-  if ([...$("work-calendar").options].some(item => item.value === settings.workCalendarId)) {
+  if (
+    [...$("work-calendar").options].some(
+      item => item.value === settings.workCalendarId
+    )
+  ) {
     $("work-calendar").value = settings.workCalendarId;
   }
 
-  $("wp-transport").value = wp.transport || "auto";
-  $("wp-url").value = wp.baseUrl || "";
-  $("wp-user").value = wp.username || "";
-  $("wp-password").value = wp.applicationPassword || "";
-  $("wp-allow-untrusted-tls").checked = Boolean(wp.allowUntrustedTls);
-  $("wp-path").value = wp.wordpressPath || "/var/www/html/wordpress";
-  $("wp-cli").value = wp.wpCliCommand || "wp";
-  $("wp-helper-dir").value = wp.legacyHelperDir || "~/bin";
-
   $("undo-settings").hidden = !(await AssistantStorage.getSettingsUndo());
-
-  if (settings.taskCalendarId && !taskCalendarExists) {
-    $("save-result").textContent =
-      "原来的默认 Task Calendar 目前不可用。请选择新的 Calendar，或选择“全部 Task Calendar”。";
-  }
 }
 
 $("save-settings").addEventListener("click", saveSettings);
@@ -171,60 +168,26 @@ $("calendar-quick").addEventListener("click", async () => {
 $("calendar-full").addEventListener("click", async () => {
   const calendarId = $("work-calendar").value;
   if (!calendarId) {
-    const result = await AssistantStorage.persistResult({
+    renderResult(await AssistantStorage.persistResult({
       action: "connection.full-calendar-write",
       success: false,
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
       summary: "没有可写的 Work Calendar。",
       steps: [],
-    }, "connection");
-    renderResult(result);
+    }, "connection"));
     return;
   }
   renderResult(await AssistantConnection.fullCalendarWriteTest(calendarId));
 });
-async function runWordPressConnectionTest(action, label, runner) {
-  try {
-    await saveWordPressFromForm();
-    renderResult(await runner());
-  } catch (error) {
-    const message = String(error?.message || error || "Unknown error");
-    const result = await AssistantStorage.persistResult({
-      action,
-      success: false,
-      startedAt: new Date().toISOString(),
-      completedAt: new Date().toISOString(),
-      summary: label + " failed: " + message,
-      steps: [{name: "WordPress connection", success: false, error: message}],
-    }, "connection");
-    renderResult(result);
-  }
-}
-
-$("wp-quick").addEventListener("click", () => {
-  void runWordPressConnectionTest(
-    "connection.wordpress-quick",
-    "WordPress quick test",
-    () => AssistantWordPress.quickTest()
-  );
-});
-$("wp-full").addEventListener("click", () => {
-  void runWordPressConnectionTest(
-    "connection.wordpress-full-write",
-    "WordPress full write test",
-    () => AssistantWordPress.fullWriteTest()
-  );
-});
 
 load().catch(async error => {
-  const result = await AssistantStorage.persistResult({
+  renderResult(await AssistantStorage.persistResult({
     action: "tools.load",
     success: false,
     startedAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
     summary: "工具页面读取失败：" + String(error && error.message || error),
     steps: [],
-  }, "system");
-  renderResult(result);
+  }, "system"));
 });

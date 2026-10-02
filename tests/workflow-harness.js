@@ -148,7 +148,7 @@ async function normalLifecycle() {
   let receipt = await AssistantExecutor.start(clone(task), "work");
   assert(receipt.success, "start failed");
   assert(receipt.logSaved === true, "start result was returned before persistent log success");
-  const firstAuditWrite = storageWrites.indexOf("caldavAssistant.audit");
+  const firstAuditWrite = storageWrites.findIndex(key => key.startsWith("caldavAssistant.audit."));
   const firstReceiptWrite = storageWrites.indexOf("caldavAssistant.lastReceipt");
   assert(
     firstAuditWrite >= 0 && firstReceiptWrite >= 0 && firstAuditWrite < firstReceiptWrite,

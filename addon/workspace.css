@@ -217,3 +217,27 @@ th, td {
   .task-filters { grid-template-columns: 1fr; }
   .item-list { max-height: 42vh; }
 }
+
+
+/* 0.3.12 logs / WordPress visibility */
+.log-day {
+  margin: 1rem 0 1.5rem;
+  border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  padding-top: .5rem;
+}
+.log-day-title {
+  position: sticky;
+  top: 0;
+  background: Canvas;
+  z-index: 1;
+  padding: .35rem 0;
+}
+.trace-list {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: normal;
+}
+.result-box pre,
+.log-record pre {
+  max-height: none;
+  overflow: auto;
+}

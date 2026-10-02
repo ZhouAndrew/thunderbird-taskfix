@@ -23,7 +23,7 @@ cleanup() {
       [[ -f "$candidate" ]] && cp "$candidate" "$ACCEPTANCE_ARTIFACT_DIR/" || true
     done
     if [[ -n "${PROFILE:-}" ]]; then
-      for candidate in         "$PROFILE/caldav-assistant-experimental.log"         "$PROFILE/caldav-assistant-experimental.log.1"; do
+      for candidate in "$PROFILE"/caldav-assistant-experimental-*.log "$PROFILE"/caldav-assistant-experimental-*.log.1; do
         [[ -f "$candidate" ]] && cp "$candidate" "$ACCEPTANCE_ARTIFACT_DIR/" || true
       done
     fi
@@ -338,8 +338,8 @@ async function __runWorkspaceAcceptance() {
   );
   const navLabels = [...document.querySelectorAll(".tool-nav a")].map(node => node.textContent.trim());
   __workspaceAssert(
-    JSON.stringify(navLabels) === JSON.stringify(["工作", "今天", "记录", "日志", "工具"]),
-    "Work UI did not keep the five stable top-level pages"
+    JSON.stringify(navLabels) === JSON.stringify(["工作", "今天", "记录", "日志", "WordPress", "工具"]),
+    "Work UI did not expose the six stable top-level pages including WordPress"
   );
 
   if (mode === "active") {
@@ -543,6 +543,13 @@ async function __runLogsAcceptance() {
   await __logsWaitFor(
     async () => (await AssistantStorage.listAudit()).length === 0,
     "audit clear persistence"
+  );
+  await __logsWaitFor(
+    () =>
+      $("clear-confirm").hidden &&
+      $("log-status").textContent === "✓ 操作日志已清空。" &&
+      $("logs").textContent === "尚无操作日志。",
+    "clear UI settled after persistent removal"
   );
   __logsAssert($("clear-confirm").hidden, "Clear confirmation remained visible after clear");
   __logsAssert(
@@ -891,8 +898,7 @@ async function __runRealAcceptance() {
   let workEvents = [...seedWorkEvents, ...switchWorkEvents];
 
   __acceptanceStage = "verify-workflow-audit";
-  const auditState = await browser.storage.local.get("caldavAssistant.audit");
-  const auditRows = auditState["caldavAssistant.audit"] || [];
+  const auditRows = await AssistantStorage.listAudit();
   const workflowActions = auditRows
     .filter(row => row.scope === "workflow")
     .map(row => row.action);
@@ -1290,7 +1296,8 @@ then
 fi
 
 echo "== Verify persistent CalDAV Assistant diagnostics =="
-ASSISTANT_LOG="$PROFILE/caldav-assistant-experimental.log"
+ASSISTANT_LOG="$(find "$PROFILE" -maxdepth 1 -type f -name 'caldav-assistant-experimental-*.log' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)"
+test -n "$ASSISTANT_LOG"
 test -s "$ASSISTANT_LOG"
 grep -q '"component":"acceptance"' "$ASSISTANT_LOG"
 grep -q '"event":"probe"' "$ASSISTANT_LOG"

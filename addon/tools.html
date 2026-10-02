@@ -13,12 +13,13 @@
     <a href="today.html">今天</a>
     <a href="record.html">记录</a>
     <a href="logs.html">日志</a>
+    <a href="wordpress.html">WordPress</a>
     <a class="active" href="tools.html">工具</a>
   </nav>
 
   <div class="tool-grid">
     <section class="card" id="task-defaults">
-      <h2>设置</h2>
+      <h2>Task / Calendar 设置</h2>
       <div class="form-grid">
         <label>默认 Task 视图
           <select id="task-view">
@@ -35,24 +36,6 @@
         <label>Work Calendar
           <select id="work-calendar"></select>
         </label>
-        <label>WordPress 连接方式
-          <select id="wp-transport">
-            <option value="auto">自动（优先 REST；网络失败时回退 WP-CLI）</option>
-            <option value="application-password">Application Password / REST</option>
-            <option value="wp-cli">WP-CLI（兼容旧脚本）</option>
-          </select>
-        </label>
-        <label>WordPress URL<input id="wp-url" placeholder="https://andrew.local"></label>
-        <label>WordPress 用户名<input id="wp-user"></label>
-        <label>Application Password<input id="wp-password" type="password"></label>
-        <label class="checkbox-row">
-          <input id="wp-allow-untrusted-tls" type="checkbox">
-          允许本地 HTTPS 忽略证书校验（仅 .local / localhost / 私有 IP）
-        </label>
-        <p class="muted">仍使用 HTTPS 加密，但不验证服务器证书身份。仅用于你明确知道并信任的本地 WordPress；默认关闭。</p>
-        <label>WordPress 本地路径<input id="wp-path" placeholder="/var/www/html/wordpress"></label>
-        <label>WP-CLI 命令 / 包装脚本<input id="wp-cli" placeholder="wp 或 /usr/local/bin/wp"></label>
-        <label>旧 WP-CLI helper 目录<input id="wp-helper-dir" placeholder="~/bin"></label>
       </div>
       <div class="tool-actions">
         <button id="save-settings">保存设置</button>
@@ -63,23 +46,25 @@
     </section>
 
     <section class="card">
-      <h2>连接测试</h2>
-      <p class="muted">完整 Calendar 测试只创建临时 TEST VEVENT，不创建 Task；完整 WordPress 测试会创建并清理临时 Draft Post 和测试图片。</p>
+      <h2>Calendar 连接测试</h2>
+      <p class="muted">完整 Calendar 测试只创建临时 TEST VEVENT，不创建 Task。</p>
       <div class="tool-actions">
         <button id="calendar-quick">Calendar 快速测试</button>
         <button id="calendar-full">Calendar 完整读写</button>
-        <button id="wp-quick">WordPress 快速测试</button>
-        <button id="wp-full">WordPress 完整读写</button>
       </div>
       <div id="test-result" class="result-box">尚未测试。</div>
       <p><a href="logs.html">查看详细日志</a></p>
     </section>
+
+    <section class="card">
+      <h2>WordPress</h2>
+      <p>WordPress 设置、自动每日工作日志、完整 REST / WP-CLI 测试现在有独立页面。</p>
+      <p><a href="wordpress.html"><strong>打开 WordPress 设置与测试 →</strong></a></p>
+    </section>
   </div>
 </main>
 <script src="core/storage.js"></script>
-<script src="core/executor.js"></script>
 <script src="core/connection.js"></script>
-<script src="core/wordpress.js"></script>
 <script src="tools.js"></script>
 </body>
 </html>

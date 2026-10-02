@@ -30,16 +30,49 @@ const TASK_STATUSES = new Set([
   "CANCELLED",
 ]);
 
-const LOG_FILE_NAME = "caldav-assistant-experimental.log";
-const LOG_BACKUP_NAME = "caldav-assistant-experimental.log.1";
+const LOG_FILE_PREFIX = "caldav-assistant-experimental-";
+const LOG_FILE_SUFFIX = ".log";
+const LOG_LEGACY_FILE_NAME = "caldav-assistant-experimental.log";
 const LOG_MAX_BYTES = 1024 * 1024;
+let legacyDiagnosticsMigrated = false;
 
-function profileFile(name) {
+function profileDirectory() {
   const directoryService = Cc["@mozilla.org/file/directory_service;1"]
     .getService(Ci.nsIProperties);
-  const file = directoryService.get("ProfD", Ci.nsIFile);
+  return directoryService.get("ProfD", Ci.nsIFile);
+}
+
+function profileFile(name) {
+  const file = profileDirectory().clone();
   file.append(name);
   return file;
+}
+
+function localDiagnosticDateKey(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return (
+    String(date.getFullYear()).padStart(4, "0") + "-" +
+    String(date.getMonth() + 1).padStart(2, "0") + "-" +
+    String(date.getDate()).padStart(2, "0")
+  );
+}
+
+function normalizeDiagnosticDateKey(value = "") {
+  const text = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text)
+    ? text
+    : localDiagnosticDateKey();
+}
+
+function diagnosticFile(dateKey = "") {
+  const day = normalizeDiagnosticDateKey(dateKey);
+  return profileFile(LOG_FILE_PREFIX + day + LOG_FILE_SUFFIX);
+}
+
+function diagnosticBackupFile(dateKey = "") {
+  const day = normalizeDiagnosticDateKey(dateKey);
+  return profileFile(LOG_FILE_PREFIX + day + LOG_FILE_SUFFIX + ".1");
 }
 
 function sanitizeLogDetails(value, depth = 0) {
@@ -70,39 +103,6 @@ function sanitizeLogDetails(value, depth = 0) {
   return String(value);
 }
 
-function appendDiagnosticLog(component, event, details = {}) {
-  if (typeof Cc === "undefined" || typeof Ci === "undefined") return "";
-  try {
-    let file = profileFile(LOG_FILE_NAME);
-    if (file.exists() && file.fileSize > LOG_MAX_BYTES) {
-      const backup = profileFile(LOG_BACKUP_NAME);
-      if (backup.exists()) backup.remove(false);
-      file.moveTo(null, LOG_BACKUP_NAME);
-      file = profileFile(LOG_FILE_NAME);
-    }
-
-    const stream = Cc["@mozilla.org/network/file-output-stream;1"]
-      .createInstance(Ci.nsIFileOutputStream);
-    stream.init(file, 0x02 | 0x08 | 0x10, 0o600, 0);
-    const converter = Cc["@mozilla.org/intl/converter-output-stream;1"]
-      .createInstance(Ci.nsIConverterOutputStream);
-    converter.init(stream, "UTF-8");
-    converter.writeString(
-      JSON.stringify({
-        ts: new Date().toISOString(),
-        component: String(component || "unknown"),
-        event: String(event || "event"),
-        details: sanitizeLogDetails(details),
-      }) + "\n"
-    );
-    converter.close();
-    return file.path;
-  } catch (error) {
-    console.warn("[CalDAVAssistant] diagnostics write failed", error);
-    return "";
-  }
-}
-
 function readFileText(file) {
   if (!file.exists()) return "";
   const input = Cc["@mozilla.org/network/file-input-stream;1"]
@@ -120,13 +120,120 @@ function readFileText(file) {
   return output;
 }
 
-async function diagnosticsInfoApi() {
-  if (typeof Cc === "undefined" || typeof Ci === "undefined") {
-    return {path: "", backupPath: "", exists: false, size: 0, maxBytes: LOG_MAX_BYTES};
+function appendRawDiagnosticLine(file, line) {
+  const stream = Cc["@mozilla.org/network/file-output-stream;1"]
+    .createInstance(Ci.nsIFileOutputStream);
+  stream.init(file, 0x02 | 0x08 | 0x10, 0o600, 0);
+  const converter = Cc["@mozilla.org/intl/converter-output-stream;1"]
+    .createInstance(Ci.nsIConverterOutputStream);
+  converter.init(stream, "UTF-8");
+  converter.writeString(String(line || "").replace(/\n?$/, "\n"));
+  converter.close();
+}
+
+function migrateLegacyDiagnostics() {
+  if (
+    legacyDiagnosticsMigrated ||
+    typeof Cc === "undefined" ||
+    typeof Ci === "undefined"
+  ) {
+    return;
   }
-  const file = profileFile(LOG_FILE_NAME);
-  const backup = profileFile(LOG_BACKUP_NAME);
+  legacyDiagnosticsMigrated = true;
+
+  try {
+    const legacy = profileFile(LOG_LEGACY_FILE_NAME);
+    if (!legacy.exists()) return;
+
+    const lines = readFileText(legacy).split(/\r?\n/).filter(Boolean);
+    for (const line of lines) {
+      let timestamp = null;
+      try {
+        timestamp = JSON.parse(line)?.ts || null;
+      } catch (_error) {}
+      const day =
+        localDiagnosticDateKey(timestamp || new Date()) ||
+        localDiagnosticDateKey();
+      appendRawDiagnosticLine(diagnosticFile(day), line);
+    }
+
+    legacy.remove(false);
+    const oldBackup = profileFile(LOG_LEGACY_FILE_NAME + ".1");
+    if (oldBackup.exists()) oldBackup.remove(false);
+  } catch (error) {
+    console.warn(
+      "[CalDAVAssistant] legacy diagnostics migration failed",
+      error
+    );
+  }
+}
+
+function appendDiagnosticLog(component, event, details = {}) {
+  if (typeof Cc === "undefined" || typeof Ci === "undefined") return "";
+
+  try {
+    migrateLegacyDiagnostics();
+    const day = localDiagnosticDateKey();
+    let file = diagnosticFile(day);
+
+    if (file.exists() && file.fileSize > LOG_MAX_BYTES) {
+      const backup = diagnosticBackupFile(day);
+      if (backup.exists()) backup.remove(false);
+      file.moveTo(null, backup.leafName);
+      file = diagnosticFile(day);
+    }
+
+    appendRawDiagnosticLine(
+      file,
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        component: String(component || "unknown"),
+        event: String(event || "event"),
+        details: sanitizeLogDetails(details),
+      })
+    );
+    return file.path;
+  } catch (error) {
+    console.warn("[CalDAVAssistant] diagnostics write failed", error);
+    return "";
+  }
+}
+
+async function listDiagnosticsDatesApi() {
+  if (typeof Cc === "undefined" || typeof Ci === "undefined") return [];
+  migrateLegacyDiagnostics();
+
+  const dates = [];
+  const entries = profileDirectory().directoryEntries;
+  while (entries.hasMoreElements()) {
+    const file = entries.getNext().QueryInterface(Ci.nsIFile);
+    const match =
+      /^caldav-assistant-experimental-(\d{4}-\d{2}-\d{2})\.log$/.exec(
+        file.leafName
+      );
+    if (match) dates.push(match[1]);
+  }
+  return [...new Set(dates)].sort().reverse();
+}
+
+async function diagnosticsInfoApi(dateKey = "") {
+  if (typeof Cc === "undefined" || typeof Ci === "undefined") {
+    return {
+      date: "",
+      path: "",
+      backupPath: "",
+      exists: false,
+      size: 0,
+      maxBytes: LOG_MAX_BYTES,
+    };
+  }
+
+  migrateLegacyDiagnostics();
+  const day = normalizeDiagnosticDateKey(dateKey);
+  const file = diagnosticFile(day);
+  const backup = diagnosticBackupFile(day);
   return {
+    date: day,
     path: file.path,
     backupPath: backup.path,
     exists: file.exists(),
@@ -136,29 +243,43 @@ async function diagnosticsInfoApi() {
   };
 }
 
-async function readDiagnosticsApi(limit = 500) {
+async function readDiagnosticsApi(limit = 500, dateKey = "") {
   if (typeof Cc === "undefined" || typeof Ci === "undefined") {
-    return {path: "", lines: [], text: ""};
+    return {date: "", path: "", lines: [], text: ""};
   }
-  const file = profileFile(LOG_FILE_NAME);
+
+  migrateLegacyDiagnostics();
+  const day = normalizeDiagnosticDateKey(dateKey);
+  const file = diagnosticFile(day);
   const maxLines = Math.max(1, Math.min(5000, Number(limit) || 500));
   const lines = readFileText(file)
     .split(/\r?\n/)
     .filter(Boolean)
     .slice(-maxLines);
-  return {path: file.path, lines, text: lines.join("\n")};
+  return {
+    date: day,
+    path: file.path,
+    lines,
+    text: lines.join("\n"),
+  };
 }
 
-async function clearDiagnosticsApi() {
+async function clearDiagnosticsApi(dateKey = "") {
   if (typeof Cc === "undefined" || typeof Ci === "undefined") {
-    return {ok: true, path: ""};
+    return {ok: true, date: "", path: ""};
   }
-  const file = profileFile(LOG_FILE_NAME);
-  const backup = profileFile(LOG_BACKUP_NAME);
+
+  migrateLegacyDiagnostics();
+  const day = normalizeDiagnosticDateKey(dateKey);
+  const file = diagnosticFile(day);
+  const backup = diagnosticBackupFile(day);
   if (file.exists()) file.remove(false);
   if (backup.exists()) backup.remove(false);
-  const path = appendDiagnosticLog("diagnostics", "cleared", {});
-  return {ok: true, path};
+
+  if (day === localDiagnosticDateKey()) {
+    appendDiagnosticLog("diagnostics", "cleared", {date: day});
+  }
+  return {ok: true, date: day, path: file.path};
 }
 
 async function writeDiagnosticApi(component, event, details = {}) {
@@ -1331,6 +1452,7 @@ this.ThunderbirdCalDAV = class extends ExtensionAPI {
         createEvent: createEventApi,
         updateEvent: updateEventApi,
         deleteEvent: deleteEventApi,
+        listDiagnosticsDates: listDiagnosticsDatesApi,
         diagnosticsInfo: diagnosticsInfoApi,
         readDiagnostics: readDiagnosticsApi,
         clearDiagnostics: clearDiagnosticsApi,

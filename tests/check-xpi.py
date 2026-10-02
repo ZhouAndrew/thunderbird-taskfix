@@ -25,10 +25,13 @@ with zipfile.ZipFile(path) as z:
         "logs.js",
         "tools.html",
         "tools.js",
+        "wordpress.html",
+        "wordpress.js",
         "core/storage.js",
         "core/executor.js",
         "core/connection.js",
         "core/wordpress.js",
+        "core/daily-log.js",
         "content/taskfix-window.js",
         "api/TaskFix/implementation.js",
         "api/TaskFix/schema.json",
@@ -39,11 +42,11 @@ with zipfile.ZipFile(path) as z:
 
     manifest = json.loads(z.read("manifest.json"))
     assert manifest["name"] == "CalDAV Assistant Experimental"
-    assert manifest["version"] == "0.3.11"
+    assert manifest["version"] == "0.3.12"
     assert manifest["browser_specific_settings"]["gecko"]["id"] == (
         "ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net"
     )
-    assert manifest["background"]["scripts"] == ["background.js"]
+    assert manifest["background"]["scripts"] == ["core/storage.js", "core/wordpress.js", "core/daily-log.js", "background.js"]
     assert manifest["browser_specific_settings"]["gecko"]["strict_min_version"] == "153.0.2"
     assert manifest["browser_specific_settings"]["gecko"]["strict_max_version"] == "153.1.*"
     assert "ThunderbirdCalDAV" in manifest["experiment_apis"]
@@ -68,6 +71,9 @@ with zipfile.ZipFile(path) as z:
     logs = z.read("logs.js").decode()
     tools_html = z.read("tools.html").decode()
     tools = z.read("tools.js").decode()
+    wordpress_html = z.read("wordpress.html").decode()
+    wordpress_page = z.read("wordpress.js").decode()
+    daily_log = z.read("core/daily-log.js").decode()
 
     assert "browser.spaces.create" in background
     assert "CalDAV Assistant" in background
@@ -148,18 +154,20 @@ with zipfile.ZipFile(path) as z:
     assert "previous: changed.previous" not in tools
     assert "details: {restored}" not in tools
     assert "Calendar 完整读写" in tools_html
-    assert "WordPress 完整读写" in tools_html
-    assert "WordPress 连接方式" in tools_html
-    assert "Application Password / REST" in tools_html
-    assert "WP-CLI（兼容旧脚本）" in tools_html
-    assert 'id="wp-path"' in tools_html
-    assert 'id="wp-cli"' in tools_html
+    assert "WordPress 设置" in wordpress_html
+    assert "完整读写测试" in wordpress_html
+    assert "Application Password / REST" in wordpress_html
+    assert "WP-CLI（兼容旧脚本）" in wordpress_html
+    assert 'id="wp-path"' in wordpress_html
+    assert 'id="wp-cli"' in wordpress_html
+    assert 'id="wp-daily-work-log"' in wordpress_html
+    assert "底层实际执行" in wordpress_page
     assert "httpRequest" in direct
     assert "curlRequest" in direct
     assert "insecureTls" in direct
     assert "isAllowedInsecureLocalHost" in direct
     assert "allowUntrustedTls" in wordpress
-    assert 'id="wp-allow-untrusted-tls"' in tools_html
+    assert 'id="wp-allow-untrusted-tls"' in wordpress_html
     assert "runWpCli" in direct
     assert "Subprocess.sys.mjs" in direct
     assert "Thunderbird privileged HTTP bridge" in wordpress
@@ -190,6 +198,14 @@ with zipfile.ZipFile(path) as z:
     assert "Media ID" in record_js
 
     assert "AssistantStorage.listAudit" in logs
+    assert "listAuditDates" in storage
+    assert "复制这一天" in logs
+    assert "copy-visible" in logs_html
+    assert "copy-json" in logs_html
+    assert "listDiagnosticsDates" in schema
+    assert "recordClosedWorkSession" in daily_log
+    assert "flushOutbox" in daily_log
+    assert "dailyWorkLogEnabled" in wordpress
     assert "ExtensionUtils" in direct and "ExtensionError" in direct
     assert "CalTodo.sys.mjs" in direct and "new CalTodo()" in direct
     assert "CalEvent.sys.mjs" in direct and "new CalEvent()" in direct
@@ -206,4 +222,4 @@ with zipfile.ZipFile(path) as z:
     assert "apply.sh" not in names
     assert "patch_omnijar.py" not in names
 
-print("caldav-assistant-experimental-0.3.11-xpi-contract: PASS")
+print("caldav-assistant-experimental-0.3.12-xpi-contract: PASS")

@@ -1,11 +1,14 @@
 {
   "manifest_version": 2,
   "name": "CalDAV Assistant Experimental",
-  "description": "Segmented, state-driven CalDAV task workflow with explicit Task selection, verified Work sessions, persistent logs, connection tests and WordPress logging.",
-  "version": "0.3.11",
+  "description": "Visible WordPress settings, detailed connection traces, per-date logs with one-click copy, and verified daily Work Session logging.",
+  "version": "0.3.12",
   "author": "ZhouAndrew",
   "background": {
     "scripts": [
+      "core/storage.js",
+      "core/wordpress.js",
+      "core/daily-log.js",
       "background.js"
     ]
   },

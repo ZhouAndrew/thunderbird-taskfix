@@ -216,11 +216,27 @@
         }
       },
       {
+        "name": "listDiagnosticsDates",
+        "type": "function",
+        "async": true,
+        "description": "List available per-local-date CalDAV Assistant diagnostic log files.",
+        "parameters": [],
+        "returns": {
+          "type": "any"
+        }
+      },
+      {
         "name": "diagnosticsInfo",
         "type": "function",
         "async": true,
         "description": "Return the persistent CalDAV Assistant diagnostics file location and rotation state.",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "dateKey",
+            "type": "string",
+            "optional": true
+          }
+        ],
         "returns": {
           "type": "any"
         }
@@ -235,6 +251,11 @@
             "name": "limit",
             "type": "integer",
             "optional": true
+          },
+          {
+            "name": "dateKey",
+            "type": "string",
+            "optional": true
           }
         ],
         "returns": {
@@ -246,7 +267,13 @@
         "type": "function",
         "async": true,
         "description": "Clear current and rotated CalDAV Assistant diagnostics.",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "dateKey",
+            "type": "string",
+            "optional": true
+          }
+        ],
         "returns": {
           "type": "any"
         }

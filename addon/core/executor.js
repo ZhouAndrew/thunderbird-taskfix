@@ -307,6 +307,29 @@
     }
   }
 
+  async function logClosedWorkSession(task, closedEvent, receipt) {
+    if (!closedEvent) {
+      step(receipt, "WordPress", "not invoked", true, {
+        note: "No newly closed Work Session needs a WordPress append.",
+      });
+      return;
+    }
+    if (!globalThis.AssistantDailyLog?.recordClosedWorkSession) {
+      step(receipt, "WordPress", "not invoked", true, {
+        note: "Daily log service is unavailable in this execution context.",
+      });
+      return;
+    }
+    try {
+      await AssistantDailyLog.recordClosedWorkSession(task, closedEvent, receipt);
+    } catch (error) {
+      step(receipt, "WordPress", "daily log handoff failed", false, {
+        message: errorText(error),
+        note: "Task/CalDAV state remains committed; WordPress is not the task source of truth.",
+      });
+    }
+  }
+
   async function finalizeReceipt(receipt) {
     receipt.completedAt = new Date().toISOString();
     if (!receipt.summary) {
@@ -391,11 +414,12 @@
 
       const beforeTask = taskSnapshot(task);
       let eventClosed = false;
+      let closedEvent = null;
       let taskWritten = false;
 
       try {
         eventClosed = true;
-        await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
+        closedEvent = await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
 
         taskWritten = true;
         await updateAndVerifyTask(
@@ -418,6 +442,7 @@
         step(receipt, "Runtime", "set paused state", true, {
           accumulatedMs: Number(runtime.accumulatedMs || 0) + elapsed,
         });
+        await logClosedWorkSession(task, closedEvent, receipt);
       } catch (error) {
         if (taskWritten) await restoreTask(task, beforeTask, receipt);
         if (eventClosed) await reopenWorkEvent(runtime.currentWorkEvent, receipt);
@@ -437,12 +462,13 @@
 
       const beforeTask = taskSnapshot(task);
       let eventClosed = false;
+      let closedEvent = null;
       let taskWritten = false;
 
       try {
         if (runtime.state === "working" && runtime.currentWorkEvent) {
           eventClosed = true;
-          await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
+          closedEvent = await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
         }
 
         taskWritten = true;
@@ -458,9 +484,7 @@
           state: "idle",
           taskUid: task.id,
         });
-        step(receipt, "WordPress", "not invoked", true, {
-          note: "Putting a task aside does not create a WordPress post.",
-        });
+        await logClosedWorkSession(task, closedEvent, receipt);
       } catch (error) {
         if (taskWritten) await restoreTask(task, beforeTask, receipt);
         if (eventClosed) await reopenWorkEvent(runtime.currentWorkEvent, receipt);
@@ -526,12 +550,13 @@
 
       const beforeTask = taskSnapshot(task);
       let eventClosed = false;
+      let closedEvent = null;
       let taskWritten = false;
 
       try {
         if (runtime.state === "working" && runtime.currentWorkEvent) {
           eventClosed = true;
-          await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
+          closedEvent = await closeWorkEvent(runtime.currentWorkEvent, toLocalInput(), receipt);
         }
 
         const changes =
@@ -544,9 +569,7 @@
 
         await AssistantStorage.clearRuntime();
         step(receipt, "Runtime", "clear current task", true, {state: "idle"});
-        step(receipt, "WordPress", "not invoked", true, {
-          note: "Workflow completion does not automatically create a WordPress post.",
-        });
+        await logClosedWorkSession(task, closedEvent, receipt);
       } catch (error) {
         if (taskWritten) await restoreTask(task, beforeTask, receipt);
         if (eventClosed) await reopenWorkEvent(runtime.currentWorkEvent, receipt);

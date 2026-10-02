@@ -69,9 +69,22 @@ async function startup() {
   try {
     await activateTaskEnhancements();
     const space = await ensureWorkspace();
+
+    let wordpressOutbox = null;
+    try {
+      wordpressOutbox =
+        await globalThis.AssistantDailyLog?.flushOutbox?.() || null;
+    } catch (error) {
+      wordpressOutbox = {
+        success: false,
+        error: error?.message || String(error),
+      };
+    }
+
     await diagnostic("startup.success", {
       version: manifest.version,
       spaceId: space?.id ?? null,
+      wordpressOutbox,
     });
   } catch (error) {
     await diagnostic("startup.error", {

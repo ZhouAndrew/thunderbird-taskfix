@@ -989,13 +989,7 @@ function nativeVisibleCalendars() {
 
 function nativeTaskTree() {
   const window = mainMailWindow();
-  const tree = window?.document?.getElementById?.("calendar-task-tree") || null;
-  if (!tree?.mFilter) {
-    throw new ExtensionError(
-      "Thunderbird native Task selector is unavailable in the main mail window"
-    );
-  }
-  return tree;
+  return window?.document?.getElementById?.("calendar-task-tree") || null;
 }
 
 function createNativeTaskFilter(filterName = "open", searchText = "") {
@@ -1004,28 +998,24 @@ function createNativeTaskFilter(filterName = "open", searchText = "") {
     throw new ExtensionError("Unsupported Thunderbird Task filter: " + name);
   }
 
-  // Reuse Thunderbird's own calFilter class through the live native task tree.
-  // This intentionally avoids duplicating date/status/recurrence rules in the
-  // add-on, so changes made by Thunderbird remain authoritative.
-  const tree = nativeTaskTree();
+  // Thunderbird loads calendar-filter.js into the main mail window itself.
+  // Instantiate that exact native calFilter class instead of reimplementing
+  // its task-date/status/recurrence rules in the add-on. This works even when
+  // the built-in Tasks tab/tree is not currently open.
+  const window = mainMailWindow();
+  const Filter = window?.calFilter;
+  if (typeof Filter !== "function") {
+    throw new ExtensionError(
+      "Thunderbird native calFilter is unavailable in the main mail window"
+    );
+  }
 
-  // Thunderbird's calFilter replaces its prototype object, so relying on
-  // mFilter.constructor would yield Object rather than calFilter. Clone the
-  // live native filter's prototype instead. Its predefined filters are already
-  // initialized by Thunderbird, while all per-query mutable state is set as
-  // own properties below.
-  const filter = Object.create(Object.getPrototypeOf(tree.mFilter));
-  filter.mFilterProperties = null;
-  filter.mItemType = Ci.calICalendar.ITEM_FILTER_TYPE_TODO;
-  filter.mSelectedDate = tree.getInitialDate?.() || cal.dtz.now();
-  filter.mFilterText = String(searchText || "");
-  filter.mStartDate = null;
-  filter.mEndDate = null;
-  filter.mToday = null;
-  filter.mTomorrow = null;
-  filter.mMaxIterations = tree.mFilter.mMaxIterations;
+  const filter = new Filter();
+  filter.itemType = Ci.calICalendar.ITEM_FILTER_TYPE_TODO;
+  filter.selectedDate = cal.dtz.now();
+  filter.filterText = String(searchText || "");
   filter.applyFilter(name);
-  return {filter, tree};
+  return {filter, tree: nativeTaskTree()};
 }
 
 async function readNativeFilteredTasks(filter, calendar) {

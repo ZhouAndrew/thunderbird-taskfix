@@ -38,6 +38,39 @@ function renderResult(result) {
   }
   root.appendChild(list);
 
+  const traceTitle = document.createElement("h3");
+  traceTitle.textContent = "底层实际执行";
+  root.appendChild(traceTitle);
+  const traceList = document.createElement("ul");
+  traceList.className = "result-list trace-list";
+  for (const trace of result.trace || []) {
+    const item = document.createElement("li");
+    const failed =
+      trace.success === false || /error/i.test(trace.event || "");
+    const duration =
+      trace.details?.durationMs !== undefined
+        ? " · " + trace.details.durationMs + " ms"
+        : "";
+    const reason =
+      trace.details?.error?.message ||
+      trace.details?.message ||
+      "";
+    item.textContent =
+      (failed ? "✗ " : "✓ ") +
+      (trace.timestamp || "") + " · " +
+      (trace.component || "trace") + " · " +
+      (trace.event || "event") +
+      duration +
+      (reason ? " · " + reason : "");
+    traceList.appendChild(item);
+  }
+  if (!(result.trace || []).length) {
+    const item = document.createElement("li");
+    item.textContent = "没有额外底层诊断；上面的测试步骤就是完整路径。";
+    traceList.appendChild(item);
+  }
+  root.appendChild(traceList);
+
   const pre = document.createElement("pre");
   pre.textContent = JSON.stringify(result, null, 2);
   root.appendChild(pre);

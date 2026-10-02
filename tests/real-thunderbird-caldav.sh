@@ -23,7 +23,7 @@ cleanup() {
       [[ -f "$candidate" ]] && cp "$candidate" "$ACCEPTANCE_ARTIFACT_DIR/" || true
     done
     if [[ -n "${PROFILE:-}" ]]; then
-      for candidate in         "$PROFILE/caldav-assistant-experimental.log"         "$PROFILE/caldav-assistant-experimental.log.1"; do
+      for candidate in "$PROFILE"/caldav-assistant-experimental-*.log "$PROFILE"/caldav-assistant-experimental-*.log.1; do
         [[ -f "$candidate" ]] && cp "$candidate" "$ACCEPTANCE_ARTIFACT_DIR/" || true
       done
     fi
@@ -1290,7 +1290,8 @@ then
 fi
 
 echo "== Verify persistent CalDAV Assistant diagnostics =="
-ASSISTANT_LOG="$PROFILE/caldav-assistant-experimental.log"
+ASSISTANT_LOG="$(find "$PROFILE" -maxdepth 1 -type f -name 'caldav-assistant-experimental-*.log' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)"
+test -n "$ASSISTANT_LOG"
 test -s "$ASSISTANT_LOG"
 grep -q '"component":"acceptance"' "$ASSISTANT_LOG"
 grep -q '"event":"probe"' "$ASSISTANT_LOG"

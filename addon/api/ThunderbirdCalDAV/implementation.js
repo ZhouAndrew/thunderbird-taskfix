@@ -1008,11 +1008,22 @@ function createNativeTaskFilter(filterName = "open", searchText = "") {
   // This intentionally avoids duplicating date/status/recurrence rules in the
   // add-on, so changes made by Thunderbird remain authoritative.
   const tree = nativeTaskTree();
-  const Filter = tree.mFilter.constructor;
-  const filter = new Filter();
-  filter.itemType = Ci.calICalendar.ITEM_FILTER_TYPE_TODO;
-  filter.selectedDate = tree.getInitialDate?.() || cal.dtz.now();
-  filter.filterText = String(searchText || "");
+
+  // Thunderbird's calFilter replaces its prototype object, so relying on
+  // mFilter.constructor would yield Object rather than calFilter. Clone the
+  // live native filter's prototype instead. Its predefined filters are already
+  // initialized by Thunderbird, while all per-query mutable state is set as
+  // own properties below.
+  const filter = Object.create(Object.getPrototypeOf(tree.mFilter));
+  filter.mFilterProperties = null;
+  filter.mItemType = Ci.calICalendar.ITEM_FILTER_TYPE_TODO;
+  filter.mSelectedDate = tree.getInitialDate?.() || cal.dtz.now();
+  filter.mFilterText = String(searchText || "");
+  filter.mStartDate = null;
+  filter.mEndDate = null;
+  filter.mToday = null;
+  filter.mTomorrow = null;
+  filter.mMaxIterations = tree.mFilter.mMaxIterations;
   filter.applyFilter(name);
   return {filter, tree};
 }

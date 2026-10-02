@@ -42,7 +42,7 @@ with zipfile.ZipFile(path) as z:
 
     manifest = json.loads(z.read("manifest.json"))
     assert manifest["name"] == "CalDAV Assistant Experimental"
-    assert manifest["version"] == "0.3.14"
+    assert manifest["version"] == "0.3.15"
     assert manifest["browser_specific_settings"]["gecko"]["id"] == (
         "ZhouAndrew.thunderbird-taskfix-lab@addons.thunderbird.net"
     )
@@ -137,7 +137,7 @@ with zipfile.ZipFile(path) as z:
     assert "未完成" in task_picker_html
     assert "接下来七天" in task_picker_html
     assert "最近结果" not in task_picker_html
-    assert "AssistantExecutor.putAside" in task_picker
+    assert "AssistantExecutor.switchAway" in task_picker
     assert "AssistantExecutor.start" in task_picker
     assert "换下当前 Task" in task_picker
     assert "开始这个 Task" in task_picker
@@ -165,6 +165,8 @@ with zipfile.ZipFile(path) as z:
     assert "listNativeTasks" in schema
     assert "recurrenceId" in task_picker
     assert "recurrenceId" in executor
+    assert "taskBeforeStart" in executor
+    assert "switchAway" in executor
     assert '@mozilla.org/network/io-service;1' in direct
     assert '@mozilla.org/appshell/window-mediator;1' in direct
     assert "new URL(url)" not in direct
@@ -257,4 +259,4 @@ with zipfile.ZipFile(path) as z:
     assert "apply.sh" not in names
     assert "patch_omnijar.py" not in names
 
-print("caldav-assistant-experimental-0.3.14-xpi-contract: PASS")
+print("caldav-assistant-experimental-0.3.15-xpi-contract: PASS")

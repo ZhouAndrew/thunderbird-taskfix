@@ -40,6 +40,7 @@ jobs:
           node tests/workflow-harness.js
           node tests/connection-harness.js
           node tests/wordpress-connector-harness.js
+          node tests/daily-log-harness.js
           bash -n tests/real-thunderbird-caldav.sh
           bash -n tests/real-thunderbird-wordpress.sh
       - name: Build CalDAV Assistant Experimental XPI

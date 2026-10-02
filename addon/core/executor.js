@@ -29,6 +29,7 @@
             calendarId: task.calendarId,
             calendarName: task.calendarName,
             title: task.title,
+            recurrenceId: String(task.recurrenceId || ""),
             beforeStatus: task.status || "",
             beforePaused: Boolean(task.paused),
             beforePercentComplete: Number(task.percentComplete || 0),
@@ -66,7 +67,8 @@
     return Boolean(
       runtime?.currentTask &&
       runtime.currentTask.id === task.id &&
-      runtime.currentTask.calendarId === task.calendarId
+      runtime.currentTask.calendarId === task.calendarId &&
+      String(runtime.currentTask.recurrenceId || "") === String(task.recurrenceId || "")
     );
   }
 
@@ -79,7 +81,11 @@
   }
 
   async function readBackTask(task, receipt, expected = {}) {
-    const stored = await browser.ThunderbirdCalDAV.getTask(task.calendarId, task.id);
+    const stored = await browser.ThunderbirdCalDAV.getTask(
+      task.calendarId,
+      task.id,
+      task.recurrenceId || ""
+    );
     for (const [key, value] of Object.entries(expected)) {
       if (stored[key] !== value) {
         throw new Error(
@@ -98,7 +104,12 @@
   }
 
   async function updateAndVerifyTask(task, changes, expected, receipt) {
-    await browser.ThunderbirdCalDAV.updateTask(task.calendarId, task.id, changes);
+    await browser.ThunderbirdCalDAV.updateTask(
+      task.calendarId,
+      task.id,
+      changes,
+      task.recurrenceId || ""
+    );
     step(receipt, "CalDAV", "write task", true, {
       uid: task.id,
       calendar: task.calendarName,
@@ -109,8 +120,17 @@
 
   async function restoreTask(task, snapshot, receipt) {
     try {
-      await browser.ThunderbirdCalDAV.updateTask(task.calendarId, task.id, snapshot);
-      const stored = await browser.ThunderbirdCalDAV.getTask(task.calendarId, task.id);
+      await browser.ThunderbirdCalDAV.updateTask(
+        task.calendarId,
+        task.id,
+        snapshot,
+        task.recurrenceId || ""
+      );
+      const stored = await browser.ThunderbirdCalDAV.getTask(
+        task.calendarId,
+        task.id,
+        task.recurrenceId || ""
+      );
       const expectedStatus = snapshot.status || "";
       if (
         stored.status !== expectedStatus ||
@@ -157,7 +177,8 @@
       status: "CONFIRMED",
       categories: ["CalDAV Assistant", "Work"],
       description:
-        `CalDAV Assistant work session\nTask UID: ${task.id}\nTask Calendar: ${task.calendarName || task.calendarId}`,
+        `CalDAV Assistant work session\nTask UID: ${task.id}\nTask Calendar: ${task.calendarName || task.calendarId}` +
+        (task.recurrenceId ? `\nTask Recurrence-ID: ${task.recurrenceId}` : ""),
       taskUid: task.id,
       workSession: true,
       workOpen: true,
@@ -382,6 +403,7 @@
             id: task.id,
             calendarId: task.calendarId,
             title: task.title,
+            recurrenceId: String(task.recurrenceId || ""),
           },
           currentWorkEvent: {
             id: workEvent.id,

@@ -80,6 +80,26 @@
     };
   }
 
+  function switchRestoreSnapshot(runtime, task) {
+    const saved = runtime?.taskBeforeStart;
+    if (saved && typeof saved === "object") {
+      return {
+        status: saved.status || null,
+        paused: Boolean(saved.paused),
+        percentComplete: Number(saved.percentComplete || 0),
+      };
+    }
+
+    // Compatibility for a work session that was started by an older add-on build.
+    // The old runtime did not persist the pre-start Task snapshot, so the safest
+    // incomplete state is NEEDS-ACTION while preserving existing progress.
+    return {
+      status: "NEEDS-ACTION",
+      paused: false,
+      percentComplete: Math.min(99, Math.max(0, Number(task?.percentComplete || 0))),
+    };
+  }
+
   async function readBackTask(task, receipt, expected = {}) {
     const stored = await browser.ThunderbirdCalDAV.getTask(
       task.calendarId,
@@ -411,6 +431,7 @@
           },
           segmentStartedAtMs: Date.now(),
           accumulatedMs: 0,
+          taskBeforeStart: beforeTask,
         });
         step(receipt, "Runtime", "set current task", true, {
           state: "working",
@@ -474,8 +495,8 @@
     });
   }
 
-  async function putAside(task) {
-    return runAction("put-aside", task, async receipt => {
+  async function switchAway(task) {
+    return runAction("switch-away", task, async receipt => {
       ensureMutableTask(task);
       const runtime = await AssistantStorage.getRuntime();
       if (!sameTask(runtime, task) || !["working", "paused"].includes(runtime.state)) {
@@ -483,6 +504,7 @@
       }
 
       const beforeTask = taskSnapshot(task);
+      const restoreTo = switchRestoreSnapshot(runtime, task);
       let eventClosed = false;
       let closedEvent = null;
       let taskWritten = false;
@@ -496,8 +518,12 @@
         taskWritten = true;
         await updateAndVerifyTask(
           task,
-          {status: "IN-PROCESS", paused: true},
-          {status: "IN-PROCESS", paused: true},
+          restoreTo,
+          {
+            status: restoreTo.status || "",
+            paused: Boolean(restoreTo.paused),
+            percentComplete: Number(restoreTo.percentComplete || 0),
+          },
           receipt
         );
 
@@ -505,6 +531,9 @@
         step(receipt, "Runtime", "release current task", true, {
           state: "idle",
           taskUid: task.id,
+          restoredStatus: restoreTo.status || "",
+          restoredPaused: Boolean(restoreTo.paused),
+          restoredPercentComplete: Number(restoreTo.percentComplete || 0),
         });
         await logClosedWorkSession(task, closedEvent, receipt);
       } catch (error) {
@@ -515,6 +544,10 @@
       }
     });
   }
+
+  // Compatibility alias for callers from 0.3.11-0.3.14. New UI code uses the
+  // semantically explicit switchAway() name.
+  const putAside = switchAway;
 
   async function resume(task, workCalendarId) {
     return runAction("resume", task, async receipt => {
@@ -604,6 +637,7 @@
   globalThis.AssistantExecutor = Object.freeze({
     start,
     pause,
+    switchAway,
     putAside,
     resume,
     complete: task => finish(task, "COMPLETED"),

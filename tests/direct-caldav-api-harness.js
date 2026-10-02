@@ -298,12 +298,40 @@ const cal = {
 };
 
 global.Ci = {
+  nsIIOService: {},
+  nsIWindowMediator: {},
   calICalendar: {
     ITEM_FILTER_COMPLETED_YES: 1,
     ITEM_FILTER_COMPLETED_NO: 2,
     ITEM_FILTER_COMPLETED_ALL: 3,
     ITEM_FILTER_TYPE_TODO: 4,
     ITEM_FILTER_TYPE_EVENT: 8,
+  },
+};
+
+global.Cc = {
+  "@mozilla.org/network/io-service;1": {
+    getService() {
+      return {
+        newURI(value) {
+          const parsed = new URL(String(value));
+          return {
+            scheme: parsed.protocol.replace(/:$/, ""),
+            host: parsed.hostname,
+          };
+        },
+      };
+    },
+  },
+  "@mozilla.org/appshell/window-mediator;1": {
+    getService() {
+      return {
+        getMostRecentWindow(type) {
+          assert(type === "mail:3pane", "unexpected Thunderbird window type");
+          return mainMailWindow;
+        },
+      };
+    },
   },
 };
 
@@ -326,27 +354,6 @@ global.ChromeUtils = {
         asyncFetch() { throw new Error("NetUtil should not run in Calendar unit harness"); },
         readInputStreamToString() { return ""; },
       }};
-    }
-    if (url.includes("Services.sys.mjs")) {
-      return {
-        Services: {
-          io: {
-            newURI(value) {
-              const parsed = new URL(String(value));
-              return {
-                scheme: parsed.protocol.replace(/:$/, ""),
-                host: parsed.hostname,
-              };
-            },
-          },
-          wm: {
-            getMostRecentWindow(type) {
-              assert(type === "mail:3pane", "unexpected Thunderbird window type");
-              return mainMailWindow;
-            },
-          },
-        },
-      };
     }
     if (url.includes("Subprocess")) {
       return {

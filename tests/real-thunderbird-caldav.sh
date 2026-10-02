@@ -544,6 +544,13 @@ async function __runLogsAcceptance() {
     async () => (await AssistantStorage.listAudit()).length === 0,
     "audit clear persistence"
   );
+  await __logsWaitFor(
+    () =>
+      $("clear-confirm").hidden &&
+      $("log-status").textContent === "✓ 操作日志已清空。" &&
+      $("logs").textContent === "尚无操作日志。",
+    "clear UI settled after persistent removal"
+  );
   __logsAssert($("clear-confirm").hidden, "Clear confirmation remained visible after clear");
   __logsAssert(
     $("log-status").textContent === "✓ 操作日志已清空。",

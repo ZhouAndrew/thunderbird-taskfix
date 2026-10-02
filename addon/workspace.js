@@ -30,7 +30,13 @@ function formatDuration(ms) {
 }
 
 function sameTaskRef(ref, task) {
-  return Boolean(ref && task && ref.id === task.id && ref.calendarId === task.calendarId);
+  return Boolean(
+    ref &&
+    task &&
+    ref.id === task.id &&
+    ref.calendarId === task.calendarId &&
+    String(ref.recurrenceId || "") === String(task.recurrenceId || "")
+  );
 }
 
 function taskByRef(ref) {
@@ -164,7 +170,19 @@ async function refreshAll() {
     state.tasks = await browser.ThunderbirdCalDAV.listTasks();
     state.runtime = await AssistantStorage.getRuntime();
     state.settings = await AssistantStorage.getSettings();
-    state.current = taskByRef(state.runtime.currentTask);
+    state.current = null;
+
+    if (state.runtime.currentTask) {
+      try {
+        state.current = await browser.ThunderbirdCalDAV.getTask(
+          state.runtime.currentTask.calendarId,
+          state.runtime.currentTask.id,
+          state.runtime.currentTask.recurrenceId || ""
+        );
+      } catch (_error) {
+        state.current = taskByRef(state.runtime.currentTask);
+      }
+    }
 
     if (state.runtime.currentTask && !state.current) {
       showNotice("当前 Task 暂时无法从 Calendar 读取。", true);

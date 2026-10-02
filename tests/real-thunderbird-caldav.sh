@@ -891,8 +891,7 @@ async function __runRealAcceptance() {
   let workEvents = [...seedWorkEvents, ...switchWorkEvents];
 
   __acceptanceStage = "verify-workflow-audit";
-  const auditState = await browser.storage.local.get("caldavAssistant.audit");
-  const auditRows = auditState["caldavAssistant.audit"] || [];
+  const auditRows = await AssistantStorage.listAudit();
   const workflowActions = auditRows
     .filter(row => row.scope === "workflow")
     .map(row => row.action);

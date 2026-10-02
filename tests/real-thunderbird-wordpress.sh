@@ -268,8 +268,8 @@ if report_host not in permissions:
     permissions.append(report_host)
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 
-tools = root / "tools.js"
-tools.write_text(tools.read_text() + r'''
+wordpress_page = root / "wordpress.js"
+wordpress_page.write_text(wordpress_page.read_text() + r'''
 
 const __WP_ACCEPTANCE_REPORT = "http://127.0.0.1:8766";
 async function __wpAcceptPost(path, payload = {}) {
@@ -294,7 +294,7 @@ async function __runRealWordPressAcceptance() {
   $("wp-user").value = "wp_user";
   $("wp-password").value = __WP_APP_PASSWORD__;
 
-  const quick = $("wp-quick");
+  const quick = $("quick");
   quick.style.position = "fixed";
   quick.style.left = "24px";
   quick.style.top = "24px";
@@ -318,7 +318,7 @@ async function __runRealWordPressAcceptance() {
   if (!quickResult.success) {
     throw new Error("quick test failed: " + (quickResult.summary || JSON.stringify(quickResult)));
   }
-  const full = $("wp-full");
+  const full = $("full");
   full.style.position = "fixed";
   full.style.left = "24px";
   full.style.top = "24px";
@@ -420,7 +420,7 @@ background = root / "background.js"
 background.write_text(background.read_text() + r'''
 setTimeout(() => {
   browser.tabs.create({
-    url: browser.runtime.getURL("tools.html#wordpress"),
+    url: browser.runtime.getURL("wordpress.html"),
   });
 }, 1500);
 ''' + "\n")

@@ -148,7 +148,8 @@ with zipfile.ZipFile(path) as z:
     assert "taskMatchesView" not in task_picker
     assert "filteredTasks" not in task_picker
     assert "createNativeTaskFilter" in direct
-    assert "Object.getPrototypeOf(tree.mFilter)" in direct
+    assert "const Filter = window?.calFilter" in direct
+    assert "const filter = new Filter()" in direct
     assert "filter.getItems(calendar)" in direct
     assert "nativeVisibleCalendars" in direct
     assert "mainCompositeCalendar" in direct

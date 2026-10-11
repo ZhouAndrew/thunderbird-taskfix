@@ -1,0 +1,3 @@
+package/
+*.tgz
+native-report.json

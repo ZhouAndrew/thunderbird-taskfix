@@ -1,0 +1,11 @@
+{
+  "manifest_version": 2,
+  "name": "Thunderbird Text Planner (Beta)",
+  "description": "Independent TXT / ICS planner with verified native Task and Event activation and safe deactivation.",
+  "version": "0.1.0b1",
+  "author": "ZhouAndrew",
+  "browser_specific_settings": {"gecko": {"id": "ZhouAndrew.thunderbird-text-planner@addons.thunderbird.net", "strict_min_version": "153.0", "strict_max_version": "153.*"}},
+  "background": {"scripts": ["background.js"]},
+  "browser_action": {"default_title": "Text Planner"},
+  "experiment_apis": {"TextPlanner": {"schema": "api/TextPlanner/schema.json", "parent": {"scopes": ["addon_parent"], "paths": [["TextPlanner"]], "script": "api/TextPlanner/implementation.js"}}}
+}

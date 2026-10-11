@@ -1,0 +1,63 @@
+name: Text Planner beta acceptance and release
+on:
+  push:
+    branches: ['release/text-planner-*']
+    paths: ['addons/text-planner/**', '.github/workflows/release-text-planner.yml']
+  pull_request:
+    paths: ['addons/text-planner/**', '.github/workflows/release-text-planner.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit and fault-injection tests
+        run: |
+          node --test addons/text-planner/tests/*.test.mjs | tee unit-report.txt
+          node --check addons/text-planner/api/TextPlanner/implementation.js
+          node --check addons/text-planner/editor/editor.mjs
+      - name: Prepare official Thunderbird and loopback CalDAV server
+        run: |
+          python -m pip install radicale==3.8.3
+          curl --fail --location --retry 3 https://archive.mozilla.org/pub/thunderbird/releases/153.1.0esr/linux-x86_64/en-US/thunderbird-153.1.0esr.tar.xz -o "$RUNNER_TEMP/thunderbird.tar.xz"
+          echo 'b2508643609a02503d5915b1ab033b88ec85d7a01e7ed1487bcdd3f025dddcb9  '"$RUNNER_TEMP/thunderbird.tar.xz" | sha256sum --check
+          tar -xJf "$RUNNER_TEMP/thunderbird.tar.xz" -C "$RUNNER_TEMP"
+      - name: Real Thunderbird storage, CalDAV, file and editor acceptance
+        env:
+          MOZ_HEADLESS: '1'
+          TEST_CALDAV: '1'
+        run: |
+          TB_BINARY="$RUNNER_TEMP/thunderbird/thunderbird" python addons/text-planner/tests/run-native.py dist/native-report.json
+      - name: Build deterministic production XPI
+        run: |
+          python addons/text-planner/build.py
+          cd dist
+          sha256sum thunderbird-text-planner-0.1.0b1.xpi > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: text-planner-beta-tested
+          path: |
+            dist/*
+            unit-report.txt
+      - name: Publish beta release only after acceptance succeeds
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=text-planner-v0.1.0-beta.1
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo 'Existing release left intact.'
+            exit 0
+          fi
+          gh release create "$TAG" dist/thunderbird-text-planner-0.1.0b1.xpi dist/SHA256SUMS.txt dist/native-report.json unit-report.txt \
+            --target "$GITHUB_SHA" --prerelease --title 'Thunderbird Text Planner 0.1.0 beta 1' \
+            --notes-file addons/text-planner/RELEASE-NOTES.md

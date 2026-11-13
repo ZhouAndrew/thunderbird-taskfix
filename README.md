@@ -1,5 +1,11 @@
 # Thunderbird TaskFix
 
+## What’s in this repository
+- [Standalone TaskFix XPI](addon/README.md) — Thunderbird Tasks add-on for batch task changes.
+- [User-local Thunderbird patch](apply.sh) — creates a separate Thunderbird copy and applies the [patch files](patches/).
+- [Packaging](packaging/) and [acceptance instructions](TESTING.md).
+- [Text Planner](https://github.com/ZhouAndrew/thunderbird-taskfix/tree/release/text-planner-0.1.0-beta.1/addons/text-planner) — a separate Thunderbird add-on in the `release/text-planner-0.1.0-beta.1` branch.
+
 TaskFix is a user-local patch package for Thunderbird Tasks. It creates a **second copy of the installed Thunderbird** under `~/.local/opt`, leaving the Linux Mint / APT Thunderbird untouched.
 
 This branch extends the original Mozilla Bug 1872561 workaround into a small batch editor for CalDAV VTODOs.
